@@ -1,5 +1,8 @@
 # Codebaxing
 
+[![npm version](https://img.shields.io/npm/v/codebaxing.svg)](https://www.npmjs.com/package/codebaxing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 MCP server cho **semantic code search**. Index codebase và tìm kiếm bằng ngôn ngữ tự nhiên.
 
 ## Ý tưởng

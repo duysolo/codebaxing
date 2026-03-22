@@ -1,5 +1,8 @@
 # Codebaxing
 
+[![npm version](https://img.shields.io/npm/v/codebaxing.svg)](https://www.npmjs.com/package/codebaxing)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 MCP server for **semantic code search**. Index your codebase and search using natural language queries.
 
 ## The Idea
