@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * CLI installer for Codebaxing MCP server.
- * Automatically configures MCP server for various AI agents.
+ * CLI for Codebaxing MCP server.
  *
  * Usage:
- *   npx codebaxing install          # Install to Claude Desktop (default)
+ *   npx codebaxing install          # Install to Claude Desktop
  *   npx codebaxing install --cursor # Install to Cursor
- *   npx codebaxing install --all    # Install to all supported editors
- *   npx codebaxing uninstall        # Uninstall from all
+ *   npx codebaxing index <path>     # Index a codebase
+ *   npx codebaxing search <query>   # Search indexed codebase
+ *   npx codebaxing stats            # Show index statistics
  */
 
 import fs from 'node:fs';
@@ -22,15 +22,10 @@ interface McpServerConfig {
   env?: Record<string, string>;
 }
 
-interface McpConfig {
-  mcpServers?: Record<string, McpServerConfig>;
-  [key: string]: unknown;
-}
-
 interface EditorConfig {
   name: string;
   configPath: string;
-  configKey: string; // 'mcpServers' or 'context_servers' etc.
+  configKey: string;
   serverConfig: McpServerConfig | Record<string, unknown>;
 }
 
@@ -48,31 +43,21 @@ function getEditorConfigs(): EditorConfig[] {
       name: 'Claude Desktop',
       configPath: path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: {
-        command: 'npx',
-        args: ['-y', 'codebaxing'],
-      },
+      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
     });
   } else if (PLATFORM === 'win32') {
     configs.push({
       name: 'Claude Desktop',
       configPath: path.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: {
-        command: 'npx',
-        args: ['-y', 'codebaxing'],
-      },
+      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
     });
   } else {
-    // Linux
     configs.push({
       name: 'Claude Desktop',
       configPath: path.join(HOME, '.config', 'claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: {
-        command: 'npx',
-        args: ['-y', 'codebaxing'],
-      },
+      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
     });
   }
 
@@ -81,59 +66,33 @@ function getEditorConfigs(): EditorConfig[] {
     name: 'Cursor',
     configPath: path.join(HOME, '.cursor', 'mcp.json'),
     configKey: 'mcpServers',
-    serverConfig: {
-      command: 'npx',
-      args: ['-y', 'codebaxing'],
-    },
+    serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
   });
 
-  // Windsurf (Codeium)
+  // Windsurf
   configs.push({
     name: 'Windsurf',
     configPath: path.join(HOME, '.codeium', 'windsurf', 'mcp_config.json'),
     configKey: 'mcpServers',
-    serverConfig: {
-      command: 'npx',
-      args: ['-y', 'codebaxing'],
-    },
+    serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
   });
 
   // Zed
-  if (PLATFORM === 'darwin') {
-    configs.push({
-      name: 'Zed',
-      configPath: path.join(HOME, '.config', 'zed', 'settings.json'),
-      configKey: 'context_servers',
-      serverConfig: {
-        command: {
-          path: 'npx',
-          args: ['-y', 'codebaxing'],
-        },
-      },
-    });
-  } else {
-    configs.push({
-      name: 'Zed',
-      configPath: path.join(HOME, '.config', 'zed', 'settings.json'),
-      configKey: 'context_servers',
-      serverConfig: {
-        command: {
-          path: 'npx',
-          args: ['-y', 'codebaxing'],
-        },
-      },
-    });
-  }
+  configs.push({
+    name: 'Zed',
+    configPath: path.join(HOME, '.config', 'zed', 'settings.json'),
+    configKey: 'context_servers',
+    serverConfig: { command: { path: 'npx', args: ['-y', 'codebaxing'] } },
+  });
 
   return configs;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── JSON Helpers ────────────────────────────────────────────────────────────
 
 function readJsonFile(filePath: string): Record<string, unknown> {
   try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    return JSON.parse(content);
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   } catch {
     return {};
   }
@@ -141,172 +100,305 @@ function readJsonFile(filePath: string): Record<string, unknown> {
 
 function writeJsonFile(filePath: string, data: Record<string, unknown>): void {
   const dir = path.dirname(filePath);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
-}
-
-function configExists(filePath: string): boolean {
-  return fs.existsSync(filePath);
 }
 
 // ─── Install/Uninstall ───────────────────────────────────────────────────────
 
 function installToEditor(editor: EditorConfig): boolean {
   console.log(`\n📦 Installing to ${editor.name}...`);
-
   const config = readJsonFile(editor.configPath);
-
-  // Initialize the config key if it doesn't exist
-  if (!config[editor.configKey]) {
-    config[editor.configKey] = {};
-  }
-
+  if (!config[editor.configKey]) config[editor.configKey] = {};
   const servers = config[editor.configKey] as Record<string, unknown>;
 
-  // Check if already installed
   if (servers.codebaxing) {
-    console.log(`   ✓ Already installed in ${editor.name}`);
+    console.log(`   ✓ Already installed`);
     return true;
   }
 
-  // Add codebaxing
   servers.codebaxing = editor.serverConfig;
-  config[editor.configKey] = servers;
-
   try {
     writeJsonFile(editor.configPath, config);
     console.log(`   ✓ Installed to ${editor.configPath}`);
     return true;
   } catch (err) {
-    console.error(`   ✗ Failed to write config: ${(err as Error).message}`);
+    console.error(`   ✗ Failed: ${(err as Error).message}`);
     return false;
   }
 }
 
 function uninstallFromEditor(editor: EditorConfig): boolean {
-  if (!configExists(editor.configPath)) {
-    return true;
-  }
-
+  if (!fs.existsSync(editor.configPath)) return true;
   console.log(`\n🗑️  Uninstalling from ${editor.name}...`);
 
   const config = readJsonFile(editor.configPath);
   const servers = config[editor.configKey] as Record<string, unknown> | undefined;
-
-  if (!servers || !servers.codebaxing) {
-    console.log(`   ✓ Not installed in ${editor.name}`);
+  if (!servers?.codebaxing) {
+    console.log(`   ✓ Not installed`);
     return true;
   }
 
   delete servers.codebaxing;
-  config[editor.configKey] = servers;
-
   try {
     writeJsonFile(editor.configPath, config);
-    console.log(`   ✓ Removed from ${editor.configPath}`);
+    console.log(`   ✓ Removed`);
     return true;
   } catch (err) {
-    console.error(`   ✗ Failed to write config: ${(err as Error).message}`);
+    console.error(`   ✗ Failed: ${(err as Error).message}`);
     return false;
   }
+}
+
+// ─── Index Command ───────────────────────────────────────────────────────────
+
+async function runIndex(codebasePath: string): Promise<void> {
+  const absolutePath = path.resolve(codebasePath);
+
+  if (!fs.existsSync(absolutePath)) {
+    console.error(`\n❌ Path does not exist: ${absolutePath}`);
+    process.exit(1);
+  }
+
+  console.log('\n🔧 Codebaxing - Index Codebase\n');
+  console.log(`📁 Path: ${absolutePath}\n`);
+
+  // Dynamic import to avoid loading heavy dependencies upfront
+  const { SourceRetriever } = await import('../indexing/source-retriever.js');
+
+  const retriever = new SourceRetriever({
+    codebasePath: absolutePath,
+    embeddingModel: 'all-MiniLM-L6-v2',
+    verbose: true,
+  });
+
+  await retriever.indexCodebase();
+
+  const stats = retriever.getStats();
+  console.log('\n📊 Index Statistics:');
+  console.log(`   Files:   ${stats.totalFiles}`);
+  console.log(`   Symbols: ${stats.totalSymbols}`);
+  console.log(`   Chunks:  ${stats.totalChunks}`);
+  console.log(`   Time:    ${stats.indexingTime?.toFixed(1)}s\n`);
+}
+
+// ─── Search Command ──────────────────────────────────────────────────────────
+
+async function runSearch(query: string, options: { path?: string; limit?: number }): Promise<void> {
+  const codebasePath = options.path || process.cwd();
+  const absolutePath = path.resolve(codebasePath);
+  const limit = options.limit || 5;
+
+  console.log('\n🔧 Codebaxing - Search\n');
+  console.log(`📁 Path:  ${absolutePath}`);
+  console.log(`🔍 Query: "${query}"`);
+  console.log(`📊 Limit: ${limit}\n`);
+
+  const { SourceRetriever } = await import('../indexing/source-retriever.js');
+
+  const retriever = new SourceRetriever({
+    codebasePath: absolutePath,
+    embeddingModel: 'all-MiniLM-L6-v2',
+    verbose: false,
+  });
+
+  // Check if index exists, if not, index first
+  const stats = retriever.getStats();
+  if (stats.totalChunks === 0) {
+    console.log('⚠️  No index found. Indexing first...\n');
+    await retriever.indexCodebase();
+    console.log('');
+  }
+
+  const { sources, documents } = await retriever.getSourcesForQuestion(query, { nResults: limit });
+
+  if (sources.length === 0) {
+    console.log('❌ No results found.\n');
+    return;
+  }
+
+  console.log('─'.repeat(60));
+  console.log('Results:\n');
+
+  sources.forEach((source, i) => {
+    console.log(`${i + 1}. ${source}`);
+  });
+
+  console.log('\n' + '─'.repeat(60) + '\n');
+}
+
+// ─── Stats Command ───────────────────────────────────────────────────────────
+
+async function runStats(codebasePath?: string): Promise<void> {
+  const absolutePath = path.resolve(codebasePath || process.cwd());
+
+  console.log('\n🔧 Codebaxing - Statistics\n');
+  console.log(`📁 Path: ${absolutePath}\n`);
+
+  const { SourceRetriever } = await import('../indexing/source-retriever.js');
+
+  const retriever = new SourceRetriever({
+    codebasePath: absolutePath,
+    embeddingModel: 'all-MiniLM-L6-v2',
+    verbose: false,
+  });
+
+  const stats = retriever.getStats();
+
+  console.log('📊 Index Statistics:');
+  console.log(`   Files:       ${stats.totalFiles}`);
+  console.log(`   Symbols:     ${stats.totalSymbols}`);
+  console.log(`   Chunks:      ${stats.totalChunks}`);
+  console.log(`   Parse Errors: ${stats.parseErrors}`);
+  if (stats.indexingTime) {
+    console.log(`   Index Time:  ${stats.indexingTime.toFixed(1)}s`);
+  }
+  console.log('');
 }
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 function printUsage(): void {
   console.log(`
-Codebaxing Installer - MCP server for semantic code search
+Codebaxing - Semantic code search via MCP
 
 Usage:
-  npx codebaxing install [options]    Install MCP server
-  npx codebaxing uninstall [options]  Uninstall MCP server
+  npx codebaxing install [options]     Install MCP server to editors
+  npx codebaxing uninstall [options]   Uninstall MCP server
+  npx codebaxing index <path>          Index a codebase
+  npx codebaxing search <query> [opts] Search indexed codebase
+  npx codebaxing stats [path]          Show index statistics
 
-Options:
-  --claude     Install/uninstall for Claude Desktop (default)
-  --cursor     Install/uninstall for Cursor
-  --windsurf   Install/uninstall for Windsurf (Codeium)
-  --zed        Install/uninstall for Zed
-  --all        Install/uninstall for all supported editors
+Install Options:
+  --claude     Claude Desktop (default)
+  --cursor     Cursor
+  --windsurf   Windsurf (Codeium)
+  --zed        Zed
+  --all        All supported editors
+
+Search Options:
+  --path, -p   Codebase path (default: current directory)
+  --limit, -n  Number of results (default: 5)
 
 Examples:
-  npx codebaxing install              # Install to Claude Desktop
-  npx codebaxing install --cursor     # Install to Cursor
-  npx codebaxing install --all        # Install to all editors
-  npx codebaxing uninstall --all      # Uninstall from all editors
+  npx codebaxing install                    # Install to Claude Desktop
+  npx codebaxing install --all              # Install to all editors
+  npx codebaxing index ./my-project         # Index a project
+  npx codebaxing search "auth middleware"   # Search current directory
+  npx codebaxing search "login" -p ./src -n 10
 `);
 }
 
-function parseArgs(args: string[]): { command: string; editors: string[] } {
-  const command = args[0] || 'help';
+function parseEditorArgs(args: string[]): string[] {
   const editors: string[] = [];
-
-  for (const arg of args.slice(1)) {
+  for (const arg of args) {
     if (arg === '--claude') editors.push('Claude Desktop');
     else if (arg === '--cursor') editors.push('Cursor');
     else if (arg === '--windsurf') editors.push('Windsurf');
     else if (arg === '--zed') editors.push('Zed');
     else if (arg === '--all') editors.push('all');
-    else if (arg === '--help' || arg === '-h') return { command: 'help', editors: [] };
   }
-
-  // Default to Claude Desktop if no editor specified
-  if (editors.length === 0 && (command === 'install' || command === 'uninstall')) {
-    editors.push('Claude Desktop');
-  }
-
-  return { command, editors };
+  return editors.length ? editors : ['Claude Desktop'];
 }
 
-function main(): void {
-  const args = process.argv.slice(2);
+function parseSearchArgs(args: string[]): { query: string; path?: string; limit?: number } {
+  let query = '';
+  let searchPath: string | undefined;
+  let limit: number | undefined;
 
-  // If no args or running as MCP server (no install/uninstall command)
-  if (args.length === 0 || (!['install', 'uninstall', 'help', '--help', '-h'].includes(args[0]))) {
-    // Run as MCP server - dynamic import to avoid loading heavy dependencies
-    import('../mcp/server.js').catch(() => {
-      // If import fails, show help
-      printUsage();
-    });
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--path' || arg === '-p') {
+      searchPath = args[++i];
+    } else if (arg === '--limit' || arg === '-n') {
+      limit = parseInt(args[++i], 10);
+    } else if (!arg.startsWith('-')) {
+      query = arg;
+    }
+  }
+
+  return { query, path: searchPath, limit };
+}
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+  const command = args[0] || '';
+
+  // MCP server mode (no args or unknown command)
+  if (!command || !['install', 'uninstall', 'index', 'search', 'stats', 'help', '--help', '-h'].includes(command)) {
+    import('../mcp/server.js').catch(() => printUsage());
     return;
   }
 
-  const { command, editors } = parseArgs(args);
-
+  // Help
   if (command === 'help' || command === '--help' || command === '-h') {
     printUsage();
     return;
   }
 
-  const allEditors = getEditorConfigs();
-  const selectedEditors = editors.includes('all')
-    ? allEditors
-    : allEditors.filter(e => editors.includes(e.name));
-
-  console.log('\n🔧 Codebaxing MCP Server Installer\n');
-
+  // Install
   if (command === 'install') {
+    const editors = parseEditorArgs(args.slice(1));
+    const allEditors = getEditorConfigs();
+    const selected = editors.includes('all') ? allEditors : allEditors.filter(e => editors.includes(e.name));
+
+    console.log('\n🔧 Codebaxing MCP Server Installer\n');
     let success = 0;
-    for (const editor of selectedEditors) {
+    for (const editor of selected) {
       if (installToEditor(editor)) success++;
     }
-
     console.log('\n' + '─'.repeat(50));
-    console.log(`\n✨ Installation complete! (${success}/${selectedEditors.length})`);
-    console.log('\n📝 Next steps:');
-    console.log('   1. Restart your editor');
-    console.log('   2. Use the "index" tool to index your codebase');
-    console.log('   3. Use the "search" tool to find code\n');
-  } else if (command === 'uninstall') {
+    console.log(`\n✨ Done! (${success}/${selected.length})`);
+    console.log('\n📝 Restart your editor to use Codebaxing.\n');
+    return;
+  }
+
+  // Uninstall
+  if (command === 'uninstall') {
+    const editors = parseEditorArgs(args.slice(1));
+    const allEditors = getEditorConfigs();
+    const selected = editors.includes('all') ? allEditors : allEditors.filter(e => editors.includes(e.name));
+
+    console.log('\n🔧 Codebaxing MCP Server Uninstaller\n');
     let success = 0;
-    for (const editor of selectedEditors) {
+    for (const editor of selected) {
       if (uninstallFromEditor(editor)) success++;
     }
-
     console.log('\n' + '─'.repeat(50));
-    console.log(`\n✨ Uninstallation complete! (${success}/${selectedEditors.length})\n`);
+    console.log(`\n✨ Done! (${success}/${selected.length})\n`);
+    return;
+  }
+
+  // Index
+  if (command === 'index') {
+    const codebasePath = args[1];
+    if (!codebasePath) {
+      console.error('\n❌ Usage: npx codebaxing index <path>\n');
+      process.exit(1);
+    }
+    await runIndex(codebasePath);
+    return;
+  }
+
+  // Search
+  if (command === 'search') {
+    const { query, path: searchPath, limit } = parseSearchArgs(args.slice(1));
+    if (!query) {
+      console.error('\n❌ Usage: npx codebaxing search <query> [--path <path>] [--limit <n>]\n');
+      process.exit(1);
+    }
+    await runSearch(query, { path: searchPath, limit });
+    return;
+  }
+
+  // Stats
+  if (command === 'stats') {
+    await runStats(args[1]);
+    return;
   }
 }
 
-main();
+main().catch((err) => {
+  console.error('Error:', err.message);
+  process.exit(1);
+});

@@ -204,6 +204,28 @@ npx codebaxing uninstall        # Gỡ khỏi Claude Desktop
 npx codebaxing uninstall --all  # Gỡ khỏi tất cả editors
 ```
 
+### CLI Commands (Dùng trực tiếp)
+
+Bạn có thể dùng Codebaxing trực tiếp từ terminal mà không cần AI agents:
+
+```bash
+# Index codebase
+npx codebaxing index /path/to/project
+
+# Tìm kiếm code
+npx codebaxing search "authentication middleware"
+npx codebaxing search "database connection" --path ./src --limit 10
+
+# Xem thống kê
+npx codebaxing stats /path/to/project
+```
+
+**Lưu ý:** Để lưu trữ vĩnh viễn, chạy ChromaDB trước:
+```bash
+docker run -d -p 8000:8000 chromadb/chroma
+export CHROMADB_URL=http://localhost:8000
+```
+
 ### Cài thủ công
 
 Nếu muốn cấu hình thủ công, xem [Cấu hình thủ công](#cấu-hình-claude-desktop) bên dưới.

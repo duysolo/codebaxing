@@ -204,6 +204,28 @@ npx codebaxing uninstall        # Remove from Claude Desktop
 npx codebaxing uninstall --all  # Remove from all editors
 ```
 
+### CLI Commands (Direct Usage)
+
+You can also use Codebaxing directly from terminal without AI agents:
+
+```bash
+# Index a codebase
+npx codebaxing index /path/to/project
+
+# Search for code
+npx codebaxing search "authentication middleware"
+npx codebaxing search "database connection" --path ./src --limit 10
+
+# Show index statistics
+npx codebaxing stats /path/to/project
+```
+
+**Note:** For persistent storage, run ChromaDB first:
+```bash
+docker run -d -p 8000:8000 chromadb/chroma
+export CHROMADB_URL=http://localhost:8000
+```
+
 ### Manual Installation
 
 If you prefer manual configuration, see [Manual Configuration](#configure-claude-desktop) below.
