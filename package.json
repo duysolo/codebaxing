@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "codebaxing": "dist/mcp/server.js"
+    "codebaxing": "dist/cli/installer.js"
   },
   "files": [
     "dist",

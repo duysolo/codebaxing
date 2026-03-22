@@ -179,26 +179,36 @@ Embedding model được train trên hàng triệu cặp text, học được r�
 
 ## Cài đặt
 
-### Cách 1: Qua npx (Khuyến nghị)
-
-Không cần cài đặt! Chỉ cần cấu hình Claude Desktop trực tiếp.
-
-### Cách 2: Qua npm (Cài global)
+### Cài nhanh (Khuyến nghị)
 
 ```bash
-npm install -g codebaxing
+# Cài vào Claude Desktop
+npx codebaxing install
+
+# Cài vào Cursor
+npx codebaxing install --cursor
+
+# Cài vào Windsurf
+npx codebaxing install --windsurf
+
+# Cài vào tất cả editors
+npx codebaxing install --all
 ```
 
-### Cách 3: Clone từ source
+Sau đó restart editor. Xong!
+
+### Gỡ cài đặt
 
 ```bash
-git clone https://github.com/duysolo/codebaxing.git
-cd codebaxing
-npm install
-npm run build
+npx codebaxing uninstall        # Gỡ khỏi Claude Desktop
+npx codebaxing uninstall --all  # Gỡ khỏi tất cả editors
 ```
 
-### (Tùy chọn) Cài đặt persistent storage
+### Cài thủ công
+
+Nếu muốn cấu hình thủ công, xem [Cấu hình thủ công](#cấu-hình-claude-desktop) bên dưới.
+
+### (Tùy chọn) Persistent Storage
 
 Mặc định, index được lưu trong memory và mất khi server restart.
 
@@ -212,7 +222,9 @@ docker run -d -p 8000:8000 chromadb/chroma
 export CHROMADB_URL=http://localhost:8000
 ```
 
-### Cấu hình Claude Desktop
+### Cấu hình thủ công
+
+#### Cấu hình Claude Desktop
 
 Thêm vào file config của Claude Desktop:
 

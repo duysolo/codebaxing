@@ -179,26 +179,36 @@ This allows finding code by **meaning**, not just keywords.
 
 ## Installation
 
-### Option 1: Via npx (Recommended)
-
-No installation needed! Just configure Claude Desktop directly.
-
-### Option 2: Via npm (Global install)
+### Quick Install (Recommended)
 
 ```bash
-npm install -g codebaxing
+# Install to Claude Desktop
+npx codebaxing install
+
+# Install to Cursor
+npx codebaxing install --cursor
+
+# Install to Windsurf
+npx codebaxing install --windsurf
+
+# Install to all supported editors
+npx codebaxing install --all
 ```
 
-### Option 3: Clone from source
+Then restart your editor. Done!
+
+### Uninstall
 
 ```bash
-git clone https://github.com/duysolo/codebaxing.git
-cd codebaxing
-npm install
-npm run build
+npx codebaxing uninstall        # Remove from Claude Desktop
+npx codebaxing uninstall --all  # Remove from all editors
 ```
 
-### (Optional) Set up persistent storage
+### Manual Installation
+
+If you prefer manual configuration, see [Manual Configuration](#configure-claude-desktop) below.
+
+### (Optional) Persistent Storage
 
 By default, the index is stored in memory and lost when the server restarts.
 
@@ -212,7 +222,9 @@ docker run -d -p 8000:8000 chromadb/chroma
 export CHROMADB_URL=http://localhost:8000
 ```
 
-### Configure Claude Desktop
+### Manual Configuration
+
+#### Configure Claude Desktop
 
 Add to your Claude Desktop config file:
 
