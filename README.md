@@ -11,13 +11,10 @@ MCP server for **semantic code search**. Index your codebase and search using na
 
 - [The Idea](#the-idea)
 - [Quick Start](#quick-start)
-- [Usage](#usage)
-  - [Via AI Agents (MCP)](#via-ai-agents-mcp)
-  - [Via CLI (Terminal)](#via-cli-terminal)
 - [Installation](#installation)
-- [How It Works](#how-it-works)
+- [Usage](#usage)
 - [Configuration](#configuration)
-- [Supported Languages](#supported-languages)
+- [How It Works](#how-it-works)
 
 ## The Idea
 
@@ -37,46 +34,103 @@ Finds: login(), validateCredentials(), checkPassword(), authMiddleware()
 
 ## Quick Start
 
-### 1. Install to your AI editor
+### For AI Editors (Claude Desktop, Cursor, Windsurf)
 
 ```bash
+# One command install
 npx codebaxing install              # Claude Desktop
 npx codebaxing install --cursor     # Cursor
 npx codebaxing install --windsurf   # Windsurf
 npx codebaxing install --all        # All editors
 ```
 
-### 2. Restart your editor
+Restart your editor, then ask: *"Index my project at /path/to/myproject"*
 
-### 3. Start using
+### For CLI Usage
 
-In Claude Desktop (or Cursor, Windsurf...):
+```bash
+# 1. Start ChromaDB (required for CLI)
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
 
+# 2. Set environment variable
+export CHROMADB_URL=http://localhost:8000
+
+# 3. Index and search
+npx codebaxing index /path/to/project
+npx codebaxing search "authentication logic"
 ```
-You: Index my project at /path/to/myproject
-Claude: [calls index tool]
 
-You: Find the authentication logic
-Claude: [calls search tool, returns relevant code]
+## Installation
+
+### Step 1: Install to AI Editor
+
+```bash
+npx codebaxing install              # Claude Desktop (default)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # All supported editors
+```
+
+### Step 2: (Optional) Setup ChromaDB for Persistent Storage
+
+By default, the index is stored in memory and lost when the editor restarts.
+
+For persistent storage, run ChromaDB:
+
+```bash
+# Start ChromaDB with Docker
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
+
+# Verify it's running
+curl http://localhost:8000/api/v1/heartbeat
+# Should return: {"nanosecond heartbeat":...}
+```
+
+Then update your editor config to include the environment variable:
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
+
+### Step 3: Restart Your Editor
+
+The Codebaxing tools are now available!
+
+### Uninstall
+
+```bash
+npx codebaxing uninstall            # Claude Desktop
+npx codebaxing uninstall --all      # All editors
 ```
 
 ## Usage
 
-### Via AI Agents (MCP)
+### Via AI Agents (Claude Desktop, Cursor, etc.)
 
-After installing to your AI editor, you interact through natural conversation:
+After installing, interact through natural conversation:
 
-#### Step 1: Index your codebase (Required first)
+#### 1. Index your codebase (Required first)
 
 ```
 You: Index the codebase at /Users/me/projects/myapp
 ```
 
-Claude will call `index(path="/Users/me/projects/myapp")` and show progress.
-
 > **Note:** First run downloads the embedding model (~90MB), takes 1-2 minutes.
 
-#### Step 2: Search for code
+#### 2. Search for code
 
 ```
 You: Find code that handles user authentication
@@ -84,7 +138,7 @@ You: Where is the database connection logic?
 You: Show me error handling patterns
 ```
 
-#### Step 3: Use memory (optional)
+#### 3. Use memory (optional)
 
 ```
 You: Remember that we're using PostgreSQL with Prisma ORM
@@ -106,84 +160,36 @@ You: What decisions have we made about the database?
 
 ### Via CLI (Terminal)
 
-You can use Codebaxing directly from terminal without AI agents.
+CLI commands **require ChromaDB** running. See [Setup ChromaDB](#step-2-optional-setup-chromadb-for-persistent-storage).
 
-#### Prerequisites: Start ChromaDB
-
-CLI commands require ChromaDB server running:
+#### Prerequisites
 
 ```bash
-# Start ChromaDB (required for CLI)
-docker run -d -p 8000:8000 chromadb/chroma
+# Start ChromaDB
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
 
-# Set environment variable
+# Set environment variable (add to your ~/.bashrc or ~/.zshrc)
 export CHROMADB_URL=http://localhost:8000
 ```
 
-#### Step 1: Index your codebase (Required first)
+#### Commands
 
 ```bash
-CHROMADB_URL=http://localhost:8000 npx codebaxing index /path/to/project
-
-# Or if you exported CHROMADB_URL:
+# Index a codebase
 npx codebaxing index /path/to/project
-```
 
-Output:
-```
-🔧 Codebaxing - Index Codebase
-
-📁 Path: /path/to/project
-
-================================================================================
-INDEXING CODEBASE
-================================================================================
-Found 47 files
-Parsed 645 symbols from 47 files
-Generating embeddings for 645 chunks...
-Model loaded: Xenova/all-MiniLM-L6-v2 (384 dims, CPU)
-
-================================================================================
-INDEXING COMPLETE
-================================================================================
-Files parsed:      47
-Symbols extracted: 645
-Chunks created:    645
-Time elapsed:      21.9s
-```
-
-#### Step 2: Search for code
-
-```bash
+# Search for code
 npx codebaxing search "authentication middleware"
 npx codebaxing search "database connection" --path ./src --limit 10
-```
 
-Output:
-```
-🔧 Codebaxing - Search
-
-📁 Path:  /path/to/project
-🔍 Query: "authentication middleware"
-📊 Limit: 5
-
-────────────────────────────────────────────────────────────
-Results:
-
-1. src/middleware/auth.ts:15 - authMiddleware()
-2. src/services/auth.ts:42 - validateToken()
-3. src/routes/login.ts:8 - loginHandler()
-
-────────────────────────────────────────────────────────────
-```
-
-#### Step 3: Check statistics
-
-```bash
+# Show index statistics
 npx codebaxing stats /path/to/project
+
+# Show help
+npx codebaxing --help
 ```
 
-#### CLI Commands Reference
+#### CLI Reference
 
 | Command | Description |
 |---------|-------------|
@@ -192,31 +198,40 @@ npx codebaxing stats /path/to/project
 | `npx codebaxing index <path>` | Index a codebase |
 | `npx codebaxing search <query> [options]` | Search indexed codebase |
 | `npx codebaxing stats [path]` | Show index statistics |
-| `npx codebaxing --help` | Show help |
 
 **Search options:**
 - `--path, -p <path>` - Codebase path (default: current directory)
 - `--limit, -n <number>` - Number of results (default: 5)
 
-## Installation
+## Configuration
 
-### Option 1: Quick Install (Recommended)
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CHROMADB_URL` | ChromaDB server URL | (in-memory) |
+| `CODEBAXING_DEVICE` | Compute device: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
+| `CODEBAXING_MAX_FILE_SIZE` | Max file size to index (MB) | `1` |
+
+### GPU Acceleration
 
 ```bash
-npx codebaxing install              # Claude Desktop (default)
-npx codebaxing install --cursor     # Cursor
-npx codebaxing install --windsurf   # Windsurf (Codeium)
-npx codebaxing install --zed        # Zed
-npx codebaxing install --all        # All supported editors
+export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
+export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
+export CODEBAXING_DEVICE=auto    # Auto-detect
 ```
 
-Then restart your editor.
+**Note:** macOS does not support CUDA. Use `webgpu` for GPU acceleration on Mac.
 
-### Option 2: Manual Configuration
+### Manual Editor Configuration
 
-#### Claude Desktop
+If you prefer to configure manually instead of using `npx codebaxing install`:
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+<details>
+<summary>Claude Desktop</summary>
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ```json
 {
@@ -228,25 +243,12 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
   }
 }
 ```
+</details>
 
-#### Cursor
+<details>
+<summary>Cursor</summary>
 
-Add to `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"]
-    }
-  }
-}
-```
-
-#### Windsurf
-
-Add to `~/.codeium/windsurf/mcp_config.json`:
+`~/.cursor/mcp.json`
 
 ```json
 {
@@ -258,10 +260,29 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
   }
 }
 ```
+</details>
 
-#### Zed
+<details>
+<summary>Windsurf</summary>
 
-Add to `~/.config/zed/settings.json`:
+`~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary>Zed</summary>
+
+`~/.config/zed/settings.json`
 
 ```json
 {
@@ -275,10 +296,12 @@ Add to `~/.config/zed/settings.json`:
   }
 }
 ```
+</details>
 
-#### VS Code + Continue
+<details>
+<summary>VS Code + Continue</summary>
 
-Add to `~/.continue/config.json`:
+`~/.continue/config.json`
 
 ```json
 {
@@ -295,13 +318,7 @@ Add to `~/.continue/config.json`:
   }
 }
 ```
-
-### Uninstall
-
-```bash
-npx codebaxing uninstall            # Claude Desktop
-npx codebaxing uninstall --all      # All editors
-```
+</details>
 
 ## How It Works
 
@@ -328,24 +345,6 @@ npx codebaxing uninstall --all      # All editors
 │                                          │  (vectors)   │      │
 │                                          └──────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                          SEARCH                                 │
-├─────────────────────────────────────────────────────────────────┤
-│   "find auth code"                                              │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐         ┌──────────────┐                    │
-│   │  Embedding   │────────▶│   ChromaDB   │                    │
-│   │    Model     │  query  │    Query     │                    │
-│   └──────────────┘  vector └──────────────┘                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Cosine Similarity                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Top-k Results                        │
-└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Semantic Search Works
@@ -357,56 +356,6 @@ The embedding model understands that:
 | "authentication" | login, credentials, auth, signin, validateUser |
 | "database" | query, SQL, connection, ORM, repository |
 | "error handling" | try/catch, exception, throw, ErrorBoundary |
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CHROMADB_URL` | ChromaDB server URL for persistent storage | (in-memory) |
-| `CODEBAXING_DEVICE` | Compute device: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
-| `CODEBAXING_MAX_FILE_SIZE` | Max file size to index (in MB) | `1` |
-
-### Persistent Storage
-
-By default, the index is stored in memory and lost when the server restarts.
-
-For persistent storage:
-
-```bash
-# Start ChromaDB
-docker run -d -p 8000:8000 chromadb/chroma
-
-# Set environment variable
-export CHROMADB_URL=http://localhost:8000
-```
-
-Or in MCP config:
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-### GPU Acceleration
-
-```bash
-export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
-export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
-export CODEBAXING_DEVICE=auto    # Auto-detect
-```
-
-**Note:** macOS does not support CUDA. Use `webgpu` for GPU acceleration on Mac.
 
 ## Supported Languages
 
@@ -424,6 +373,7 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 ## Requirements
 
 - Node.js >= 20.0.0
+- Docker (for ChromaDB, optional but recommended)
 - ~500MB disk space for embedding model (downloaded on first run)
 
 ## Technical Details

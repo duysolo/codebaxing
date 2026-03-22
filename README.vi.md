@@ -11,13 +11,10 @@ MCP server cho **semantic code search**. Index codebase và tìm kiếm bằng n
 
 - [Ý tưởng](#ý-tưởng)
 - [Bắt đầu nhanh](#bắt-đầu-nhanh)
-- [Cách sử dụng](#cách-sử-dụng)
-  - [Qua AI Agents (MCP)](#qua-ai-agents-mcp)
-  - [Qua CLI (Terminal)](#qua-cli-terminal)
 - [Cài đặt](#cài-đặt)
-- [Cơ chế hoạt động](#cơ-chế-hoạt-động)
+- [Cách sử dụng](#cách-sử-dụng)
 - [Cấu hình](#cấu-hình)
-- [Ngôn ngữ hỗ trợ](#ngôn-ngữ-hỗ-trợ)
+- [Cơ chế hoạt động](#cơ-chế-hoạt-động)
 
 ## Ý tưởng
 
@@ -37,46 +34,103 @@ Tìm được: login(), validateCredentials(), checkPassword(), authMiddleware()
 
 ## Bắt đầu nhanh
 
-### 1. Cài vào AI editor của bạn
+### Cho AI Editors (Claude Desktop, Cursor, Windsurf)
 
 ```bash
+# Cài đặt một lệnh
 npx codebaxing install              # Claude Desktop
 npx codebaxing install --cursor     # Cursor
 npx codebaxing install --windsurf   # Windsurf
 npx codebaxing install --all        # Tất cả editors
 ```
 
-### 2. Khởi động lại editor
+Khởi động lại editor, sau đó hỏi: *"Index project của tôi tại /path/to/myproject"*
 
-### 3. Bắt đầu sử dụng
+### Cho CLI (Terminal)
 
-Trong Claude Desktop (hoặc Cursor, Windsurf...):
+```bash
+# 1. Khởi động ChromaDB (bắt buộc cho CLI)
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
 
+# 2. Set biến môi trường
+export CHROMADB_URL=http://localhost:8000
+
+# 3. Index và tìm kiếm
+npx codebaxing index /path/to/project
+npx codebaxing search "authentication logic"
 ```
-Bạn: Index project của tôi tại /path/to/myproject
-Claude: [gọi index tool]
 
-Bạn: Tìm logic xác thực
-Claude: [gọi search tool, trả về code liên quan]
+## Cài đặt
+
+### Bước 1: Cài vào AI Editor
+
+```bash
+npx codebaxing install              # Claude Desktop (mặc định)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # Tất cả editors
+```
+
+### Bước 2: (Tùy chọn) Setup ChromaDB cho Lưu trữ Vĩnh viễn
+
+Mặc định, index được lưu trong memory và mất khi editor khởi động lại.
+
+Để lưu trữ vĩnh viễn, chạy ChromaDB:
+
+```bash
+# Khởi động ChromaDB với Docker
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
+
+# Kiểm tra đang chạy
+curl http://localhost:8000/api/v1/heartbeat
+# Sẽ trả về: {"nanosecond heartbeat":...}
+```
+
+Sau đó cập nhật config editor để thêm biến môi trường:
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
+
+### Bước 3: Khởi động lại Editor
+
+Các tools Codebaxing đã sẵn sàng!
+
+### Gỡ cài đặt
+
+```bash
+npx codebaxing uninstall            # Claude Desktop
+npx codebaxing uninstall --all      # Tất cả editors
 ```
 
 ## Cách sử dụng
 
-### Qua AI Agents (MCP)
+### Qua AI Agents (Claude Desktop, Cursor, v.v.)
 
-Sau khi cài vào AI editor, bạn tương tác qua hội thoại tự nhiên:
+Sau khi cài đặt, tương tác qua hội thoại tự nhiên:
 
-#### Bước 1: Index codebase (Bắt buộc đầu tiên)
+#### 1. Index codebase (Bắt buộc đầu tiên)
 
 ```
 Bạn: Index codebase tại /Users/me/projects/myapp
 ```
 
-Claude sẽ gọi `index(path="/Users/me/projects/myapp")` và hiển thị tiến trình.
-
 > **Lưu ý:** Lần đầu chạy sẽ download embedding model (~90MB), mất 1-2 phút.
 
-#### Bước 2: Tìm kiếm code
+#### 2. Tìm kiếm code
 
 ```
 Bạn: Tìm code xử lý xác thực người dùng
@@ -84,7 +138,7 @@ Bạn: Logic kết nối database ở đâu?
 Bạn: Cho tôi xem patterns xử lý lỗi
 ```
 
-#### Bước 3: Sử dụng memory (tùy chọn)
+#### 3. Sử dụng memory (tùy chọn)
 
 ```
 Bạn: Ghi nhớ rằng chúng ta dùng PostgreSQL với Prisma ORM
@@ -106,117 +160,78 @@ Bạn: Những quyết định nào đã được đưa ra về database?
 
 ### Qua CLI (Terminal)
 
-Bạn có thể dùng Codebaxing trực tiếp từ terminal mà không cần AI agents.
+Các lệnh CLI **yêu cầu ChromaDB** đang chạy. Xem [Setup ChromaDB](#bước-2-tùy-chọn-setup-chromadb-cho-lưu-trữ-vĩnh-viễn).
 
-#### Yêu cầu: Khởi động ChromaDB
-
-CLI commands cần ChromaDB server đang chạy:
+#### Yêu cầu
 
 ```bash
-# Khởi động ChromaDB (bắt buộc cho CLI)
-docker run -d -p 8000:8000 chromadb/chroma
+# Khởi động ChromaDB
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
 
-# Set biến môi trường
+# Set biến môi trường (thêm vào ~/.bashrc hoặc ~/.zshrc)
 export CHROMADB_URL=http://localhost:8000
 ```
 
-#### Bước 1: Index codebase (Bắt buộc đầu tiên)
+#### Các lệnh
 
 ```bash
-CHROMADB_URL=http://localhost:8000 npx codebaxing index /path/to/project
-
-# Hoặc nếu đã export CHROMADB_URL:
+# Index codebase
 npx codebaxing index /path/to/project
-```
 
-Output:
-```
-🔧 Codebaxing - Index Codebase
-
-📁 Path: /path/to/project
-
-================================================================================
-INDEXING CODEBASE
-================================================================================
-Found 47 files
-Parsed 645 symbols from 47 files
-Generating embeddings for 645 chunks...
-Model loaded: Xenova/all-MiniLM-L6-v2 (384 dims, CPU)
-
-================================================================================
-INDEXING COMPLETE
-================================================================================
-Files parsed:      47
-Symbols extracted: 645
-Chunks created:    645
-Time elapsed:      21.9s
-```
-
-#### Bước 2: Tìm kiếm code
-
-```bash
+# Tìm kiếm code
 npx codebaxing search "authentication middleware"
 npx codebaxing search "database connection" --path ./src --limit 10
-```
 
-Output:
-```
-🔧 Codebaxing - Search
-
-📁 Path:  /path/to/project
-🔍 Query: "authentication middleware"
-📊 Limit: 5
-
-────────────────────────────────────────────────────────────
-Results:
-
-1. src/middleware/auth.ts:15 - authMiddleware()
-2. src/services/auth.ts:42 - validateToken()
-3. src/routes/login.ts:8 - loginHandler()
-
-────────────────────────────────────────────────────────────
-```
-
-#### Bước 3: Xem thống kê
-
-```bash
+# Xem thống kê index
 npx codebaxing stats /path/to/project
+
+# Xem help
+npx codebaxing --help
 ```
 
-#### Bảng tham chiếu CLI Commands
+#### Bảng tham chiếu CLI
 
-| Command | Mô tả |
-|---------|-------|
+| Lệnh | Mô tả |
+|------|-------|
 | `npx codebaxing install [--editor]` | Cài MCP server vào AI editor |
 | `npx codebaxing uninstall [--editor]` | Gỡ MCP server |
 | `npx codebaxing index <path>` | Index codebase |
 | `npx codebaxing search <query> [options]` | Tìm kiếm codebase đã index |
 | `npx codebaxing stats [path]` | Hiển thị thống kê index |
-| `npx codebaxing --help` | Hiển thị help |
 
 **Search options:**
 - `--path, -p <path>` - Đường dẫn codebase (mặc định: thư mục hiện tại)
 - `--limit, -n <number>` - Số kết quả (mặc định: 5)
 
-## Cài đặt
+## Cấu hình
 
-### Cách 1: Cài nhanh (Khuyến nghị)
+### Biến môi trường
+
+| Biến | Mô tả | Mặc định |
+|------|-------|----------|
+| `CHROMADB_URL` | URL ChromaDB server | (in-memory) |
+| `CODEBAXING_DEVICE` | Thiết bị tính toán: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
+| `CODEBAXING_MAX_FILE_SIZE` | Kích thước file tối đa để index (MB) | `1` |
+
+### Tăng tốc GPU
 
 ```bash
-npx codebaxing install              # Claude Desktop (mặc định)
-npx codebaxing install --cursor     # Cursor
-npx codebaxing install --windsurf   # Windsurf (Codeium)
-npx codebaxing install --zed        # Zed
-npx codebaxing install --all        # Tất cả editors
+export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
+export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
+export CODEBAXING_DEVICE=auto    # Tự động detect
 ```
 
-Sau đó restart editor.
+**Lưu ý:** macOS không hỗ trợ CUDA. Dùng `webgpu` để tăng tốc trên Mac.
 
-### Cách 2: Cấu hình thủ công
+### Cấu hình thủ công cho Editors
 
-#### Claude Desktop
+Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing install`:
 
-Thêm vào `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) hoặc `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+<details>
+<summary>Claude Desktop</summary>
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows)
 
 ```json
 {
@@ -228,25 +243,12 @@ Thêm vào `~/Library/Application Support/Claude/claude_desktop_config.json` (ma
   }
 }
 ```
+</details>
 
-#### Cursor
+<details>
+<summary>Cursor</summary>
 
-Thêm vào `~/.cursor/mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"]
-    }
-  }
-}
-```
-
-#### Windsurf
-
-Thêm vào `~/.codeium/windsurf/mcp_config.json`:
+`~/.cursor/mcp.json`
 
 ```json
 {
@@ -258,10 +260,29 @@ Thêm vào `~/.codeium/windsurf/mcp_config.json`:
   }
 }
 ```
+</details>
 
-#### Zed
+<details>
+<summary>Windsurf</summary>
 
-Thêm vào `~/.config/zed/settings.json`:
+`~/.codeium/windsurf/mcp_config.json`
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary>Zed</summary>
+
+`~/.config/zed/settings.json`
 
 ```json
 {
@@ -275,10 +296,12 @@ Thêm vào `~/.config/zed/settings.json`:
   }
 }
 ```
+</details>
 
-#### VS Code + Continue
+<details>
+<summary>VS Code + Continue</summary>
 
-Thêm vào `~/.continue/config.json`:
+`~/.continue/config.json`
 
 ```json
 {
@@ -295,13 +318,7 @@ Thêm vào `~/.continue/config.json`:
   }
 }
 ```
-
-### Gỡ cài đặt
-
-```bash
-npx codebaxing uninstall            # Claude Desktop
-npx codebaxing uninstall --all      # Tất cả editors
-```
+</details>
 
 ## Cơ chế hoạt động
 
@@ -328,24 +345,6 @@ npx codebaxing uninstall --all      # Tất cả editors
 │                                          │  (vectors)   │      │
 │                                          └──────────────┘      │
 └─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                          SEARCH                                 │
-├─────────────────────────────────────────────────────────────────┤
-│   "find auth code"                                              │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐         ┌──────────────┐                    │
-│   │  Embedding   │────────▶│   ChromaDB   │                    │
-│   │    Model     │  query  │    Query     │                    │
-│   └──────────────┘  vector └──────────────┘                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Cosine Similarity                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Top-k Results                        │
-└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Tại sao Semantic Search hoạt động
@@ -357,56 +356,6 @@ Embedding model hiểu rằng:
 | "authentication" | login, credentials, auth, signin, validateUser |
 | "database" | query, SQL, connection, ORM, repository |
 | "error handling" | try/catch, exception, throw, ErrorBoundary |
-
-## Cấu hình
-
-### Biến môi trường
-
-| Biến | Mô tả | Mặc định |
-|------|-------|----------|
-| `CHROMADB_URL` | URL ChromaDB server để lưu trữ vĩnh viễn | (in-memory) |
-| `CODEBAXING_DEVICE` | Thiết bị tính toán: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
-| `CODEBAXING_MAX_FILE_SIZE` | Kích thước file tối đa để index (MB) | `1` |
-
-### Lưu trữ vĩnh viễn
-
-Mặc định, index được lưu trong memory và mất khi server restart.
-
-Để lưu trữ vĩnh viễn:
-
-```bash
-# Khởi động ChromaDB
-docker run -d -p 8000:8000 chromadb/chroma
-
-# Set biến môi trường
-export CHROMADB_URL=http://localhost:8000
-```
-
-Hoặc trong MCP config:
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-### Tăng tốc GPU
-
-```bash
-export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
-export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
-export CODEBAXING_DEVICE=auto    # Tự động detect
-```
-
-**Lưu ý:** macOS không hỗ trợ CUDA. Dùng `webgpu` để tăng tốc trên Mac.
 
 ## Ngôn ngữ hỗ trợ
 
@@ -424,6 +373,7 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 ## Yêu cầu
 
 - Node.js >= 20.0.0
+- Docker (cho ChromaDB, tùy chọn nhưng khuyến nghị)
 - ~500MB dung lượng đĩa cho embedding model (tải xuống lần chạy đầu tiên)
 
 ## Chi tiết kỹ thuật

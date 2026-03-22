@@ -163,6 +163,9 @@ async function runIndex(codebasePath: string): Promise<void> {
   console.log('\n🔧 Codebaxing - Index Codebase\n');
   console.log(`📁 Path: ${absolutePath}\n`);
 
+  // Check ChromaDB connection first
+  await checkChromaDBConnection();
+
   // Dynamic import to avoid loading heavy dependencies upfront
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
@@ -204,6 +207,31 @@ function showChromaDBError(): void {
   process.exit(1);
 }
 
+async function checkChromaDBConnection(): Promise<void> {
+  const chromaUrl = process.env.CHROMADB_URL || 'http://localhost:8000';
+
+  console.log(`🔗 Checking ChromaDB connection (${chromaUrl})...`);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+
+    const response = await fetch(`${chromaUrl}/api/v1/heartbeat`, {
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      showChromaDBError();
+    }
+
+    console.log('✅ ChromaDB connected\n');
+  } catch (err) {
+    showChromaDBError();
+  }
+}
+
 async function runSearch(query: string, options: { path?: string; limit?: number }): Promise<void> {
   const codebasePath = options.path || process.cwd();
   const absolutePath = path.resolve(codebasePath);
@@ -213,6 +241,9 @@ async function runSearch(query: string, options: { path?: string; limit?: number
   console.log(`📁 Path:  ${absolutePath}`);
   console.log(`🔍 Query: "${query}"`);
   console.log(`📊 Limit: ${limit}\n`);
+
+  // Check ChromaDB connection first
+  await checkChromaDBConnection();
 
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
@@ -262,6 +293,9 @@ async function runStats(codebasePath?: string): Promise<void> {
 
   console.log('\n🔧 Codebaxing - Statistics\n');
   console.log(`📁 Path: ${absolutePath}\n`);
+
+  // Check ChromaDB connection first
+  await checkChromaDBConnection();
 
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
