@@ -58,11 +58,11 @@ src/
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CHROMADB_URL` | ChromaDB server URL for persistent storage | (ephemeral mode) |
+| `CHROMADB_URL` | ChromaDB server URL (**required**) | - |
 | `CODEBAXING_DEVICE` | Compute device: `cpu`, `cuda`, `webgpu`, `auto` | `cpu` |
 
-### ChromaDB Persistence
-Without `CHROMADB_URL`, data is stored in memory and lost on restart.
+### ChromaDB Setup (Required)
+ChromaDB server must be running. Start with Docker:
 ```bash
 docker run -d -p 8000:8000 chromadb/chroma
 export CHROMADB_URL=http://localhost:8000

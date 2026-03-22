@@ -176,17 +176,21 @@ export class SourceRetriever {
       { showProgress: this.verbose }
     );
 
-    // Initialize ChromaDB
-    // Note: ChromaDB Node.js client connects to a server.
-    // Set CHROMADB_URL env var to connect to a running ChromaDB server.
-    // Without it, uses ephemeral in-memory mode (data lost on restart).
+    // Initialize ChromaDB - REQUIRED
+    // ChromaDB server must be running for persistent storage.
+    const chromaUrl = process.env.CHROMADB_URL;
+    if (!chromaUrl) {
+      throw new Error(
+        'CHROMADB_URL environment variable is required.\n\n' +
+        'Quick fix:\n' +
+        '  1. Start ChromaDB: docker run -d -p 8000:8000 chromadb/chroma\n' +
+        '  2. Set env var: export CHROMADB_URL=http://localhost:8000\n'
+      );
+    }
     if (this.persistPath) {
       fs.mkdirSync(this.persistPath, { recursive: true });
     }
-    const chromaUrl = process.env.CHROMADB_URL;
-    this.chromaClient = chromaUrl
-      ? new ChromaClient({ path: chromaUrl })
-      : new ChromaClient();
+    this.chromaClient = new ChromaClient({ path: chromaUrl });
   }
 
   private log(message: string) {

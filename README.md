@@ -34,49 +34,46 @@ Finds: login(), validateCredentials(), checkPassword(), authMiddleware()
 
 ## Quick Start
 
-### For AI Editors (Claude Desktop, Cursor, Windsurf)
+### Step 1: Start ChromaDB (Required)
+
+ChromaDB is required for persistent storage. Start it with Docker:
 
 ```bash
-# One command install
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
+
+# Verify it's running
+curl http://localhost:8000/api/v1/heartbeat
+```
+
+### Step 2: Install to Your Editor
+
+```bash
 npx codebaxing install              # Claude Desktop
 npx codebaxing install --cursor     # Cursor
 npx codebaxing install --windsurf   # Windsurf
 npx codebaxing install --all        # All editors
 ```
 
+### Step 3: Restart Editor and Use
+
 Restart your editor, then ask: *"Index my project at /path/to/myproject"*
 
 ### For CLI Usage
 
 ```bash
-# 1. Start ChromaDB (required for CLI)
-docker run -d -p 8000:8000 --name chromadb chromadb/chroma
-
-# 2. Set environment variable
+# Set environment variable (add to ~/.bashrc or ~/.zshrc)
 export CHROMADB_URL=http://localhost:8000
 
-# 3. Index and search
+# Index and search
 npx codebaxing index /path/to/project
 npx codebaxing search "authentication logic"
 ```
 
 ## Installation
 
-### Step 1: Install to AI Editor
+### Step 1: Start ChromaDB (Required)
 
-```bash
-npx codebaxing install              # Claude Desktop (default)
-npx codebaxing install --cursor     # Cursor
-npx codebaxing install --windsurf   # Windsurf (Codeium)
-npx codebaxing install --zed        # Zed
-npx codebaxing install --all        # All supported editors
-```
-
-### Step 2: (Optional) Setup ChromaDB for Persistent Storage
-
-By default, the index is stored in memory and lost when the editor restarts.
-
-For persistent storage, run ChromaDB:
+ChromaDB is **required** for storing code indexes. Without it, Codebaxing won't work.
 
 ```bash
 # Start ChromaDB with Docker
@@ -87,23 +84,19 @@ curl http://localhost:8000/api/v1/heartbeat
 # Should return: {"nanosecond heartbeat":...}
 ```
 
-Then update your editor config to include the environment variable:
+**Tip:** Add this to your system startup or use Docker Compose for persistence.
 
-**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+### Step 2: Install to AI Editor
 
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
+```bash
+npx codebaxing install              # Claude Desktop (default)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # All supported editors
 ```
+
+The installer automatically configures `CHROMADB_URL=http://localhost:8000` in your editor.
 
 ### Step 3: Restart Your Editor
 
@@ -209,7 +202,7 @@ npx codebaxing --help
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CHROMADB_URL` | ChromaDB server URL | (in-memory) |
+| `CHROMADB_URL` | ChromaDB server URL (**required**) | - |
 | `CODEBAXING_DEVICE` | Compute device: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
 | `CODEBAXING_MAX_FILE_SIZE` | Max file size to index (MB) | `1` |
 
@@ -238,7 +231,10 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -255,7 +251,10 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -272,7 +271,10 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -291,6 +293,9 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
       "command": {
         "path": "npx",
         "args": ["-y", "codebaxing"]
+      },
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
       }
     }
   }
@@ -311,7 +316,10 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
         "transport": {
           "type": "stdio",
           "command": "npx",
-          "args": ["-y", "codebaxing"]
+          "args": ["-y", "codebaxing"],
+          "env": {
+            "CHROMADB_URL": "http://localhost:8000"
+          }
         }
       }
     ]
@@ -373,7 +381,7 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 ## Requirements
 
 - Node.js >= 20.0.0
-- Docker (for ChromaDB, optional but recommended)
+- Docker (for ChromaDB - **required**)
 - ~500MB disk space for embedding model (downloaded on first run)
 
 ## Technical Details

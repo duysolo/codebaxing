@@ -34,49 +34,46 @@ Tìm được: login(), validateCredentials(), checkPassword(), authMiddleware()
 
 ## Bắt đầu nhanh
 
-### Cho AI Editors (Claude Desktop, Cursor, Windsurf)
+### Bước 1: Khởi động ChromaDB (Bắt buộc)
+
+ChromaDB là **bắt buộc** để lưu trữ index. Khởi động với Docker:
 
 ```bash
-# Cài đặt một lệnh
+docker run -d -p 8000:8000 --name chromadb chromadb/chroma
+
+# Kiểm tra đang chạy
+curl http://localhost:8000/api/v1/heartbeat
+```
+
+### Bước 2: Cài vào Editor
+
+```bash
 npx codebaxing install              # Claude Desktop
 npx codebaxing install --cursor     # Cursor
 npx codebaxing install --windsurf   # Windsurf
 npx codebaxing install --all        # Tất cả editors
 ```
 
+### Bước 3: Khởi động lại Editor và Sử dụng
+
 Khởi động lại editor, sau đó hỏi: *"Index project của tôi tại /path/to/myproject"*
 
 ### Cho CLI (Terminal)
 
 ```bash
-# 1. Khởi động ChromaDB (bắt buộc cho CLI)
-docker run -d -p 8000:8000 --name chromadb chromadb/chroma
-
-# 2. Set biến môi trường
+# Set biến môi trường (thêm vào ~/.bashrc hoặc ~/.zshrc)
 export CHROMADB_URL=http://localhost:8000
 
-# 3. Index và tìm kiếm
+# Index và tìm kiếm
 npx codebaxing index /path/to/project
 npx codebaxing search "authentication logic"
 ```
 
 ## Cài đặt
 
-### Bước 1: Cài vào AI Editor
+### Bước 1: Khởi động ChromaDB (Bắt buộc)
 
-```bash
-npx codebaxing install              # Claude Desktop (mặc định)
-npx codebaxing install --cursor     # Cursor
-npx codebaxing install --windsurf   # Windsurf (Codeium)
-npx codebaxing install --zed        # Zed
-npx codebaxing install --all        # Tất cả editors
-```
-
-### Bước 2: (Tùy chọn) Setup ChromaDB cho Lưu trữ Vĩnh viễn
-
-Mặc định, index được lưu trong memory và mất khi editor khởi động lại.
-
-Để lưu trữ vĩnh viễn, chạy ChromaDB:
+ChromaDB là **bắt buộc** để lưu trữ code index. Không có nó, Codebaxing sẽ không hoạt động.
 
 ```bash
 # Khởi động ChromaDB với Docker
@@ -87,23 +84,19 @@ curl http://localhost:8000/api/v1/heartbeat
 # Sẽ trả về: {"nanosecond heartbeat":...}
 ```
 
-Sau đó cập nhật config editor để thêm biến môi trường:
+**Mẹo:** Thêm vào system startup hoặc dùng Docker Compose để tự động khởi động.
 
-**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+### Bước 2: Cài vào AI Editor
 
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
+```bash
+npx codebaxing install              # Claude Desktop (mặc định)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # Tất cả editors
 ```
+
+Installer tự động cấu hình `CHROMADB_URL=http://localhost:8000` trong editor của bạn.
 
 ### Bước 3: Khởi động lại Editor
 
@@ -209,7 +202,7 @@ npx codebaxing --help
 
 | Biến | Mô tả | Mặc định |
 |------|-------|----------|
-| `CHROMADB_URL` | URL ChromaDB server | (in-memory) |
+| `CHROMADB_URL` | URL ChromaDB server (**bắt buộc**) | - |
 | `CODEBAXING_DEVICE` | Thiết bị tính toán: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
 | `CODEBAXING_MAX_FILE_SIZE` | Kích thước file tối đa để index (MB) | `1` |
 
@@ -238,7 +231,10 @@ Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing instal
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -255,7 +251,10 @@ Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing instal
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -272,7 +271,10 @@ Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing instal
   "mcpServers": {
     "codebaxing": {
       "command": "npx",
-      "args": ["-y", "codebaxing"]
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
     }
   }
 }
@@ -291,6 +293,9 @@ Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing instal
       "command": {
         "path": "npx",
         "args": ["-y", "codebaxing"]
+      },
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
       }
     }
   }
@@ -311,7 +316,10 @@ Nếu bạn muốn cấu hình thủ công thay vì dùng `npx codebaxing instal
         "transport": {
           "type": "stdio",
           "command": "npx",
-          "args": ["-y", "codebaxing"]
+          "args": ["-y", "codebaxing"],
+          "env": {
+            "CHROMADB_URL": "http://localhost:8000"
+          }
         }
       }
     ]
@@ -373,7 +381,7 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 ## Yêu cầu
 
 - Node.js >= 20.0.0
-- Docker (cho ChromaDB, tùy chọn nhưng khuyến nghị)
+- Docker (cho ChromaDB - **bắt buộc**)
 - ~500MB dung lượng đĩa cho embedding model (tải xuống lần chạy đầu tiên)
 
 ## Chi tiết kỹ thuật

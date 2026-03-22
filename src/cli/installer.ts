@@ -37,27 +37,34 @@ const PLATFORM = process.platform;
 function getEditorConfigs(): EditorConfig[] {
   const configs: EditorConfig[] = [];
 
+  // Default server config with ChromaDB URL (required)
+  const defaultServerConfig = {
+    command: 'npx',
+    args: ['-y', 'codebaxing'],
+    env: { CHROMADB_URL: 'http://localhost:8000' },
+  };
+
   // Claude Desktop
   if (PLATFORM === 'darwin') {
     configs.push({
       name: 'Claude Desktop',
       configPath: path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
+      serverConfig: defaultServerConfig,
     });
   } else if (PLATFORM === 'win32') {
     configs.push({
       name: 'Claude Desktop',
       configPath: path.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
+      serverConfig: defaultServerConfig,
     });
   } else {
     configs.push({
       name: 'Claude Desktop',
       configPath: path.join(HOME, '.config', 'claude', 'claude_desktop_config.json'),
       configKey: 'mcpServers',
-      serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
+      serverConfig: defaultServerConfig,
     });
   }
 
@@ -66,7 +73,7 @@ function getEditorConfigs(): EditorConfig[] {
     name: 'Cursor',
     configPath: path.join(HOME, '.cursor', 'mcp.json'),
     configKey: 'mcpServers',
-    serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
+    serverConfig: defaultServerConfig,
   });
 
   // Windsurf
@@ -74,15 +81,18 @@ function getEditorConfigs(): EditorConfig[] {
     name: 'Windsurf',
     configPath: path.join(HOME, '.codeium', 'windsurf', 'mcp_config.json'),
     configKey: 'mcpServers',
-    serverConfig: { command: 'npx', args: ['-y', 'codebaxing'] },
+    serverConfig: defaultServerConfig,
   });
 
-  // Zed
+  // Zed (different format)
   configs.push({
     name: 'Zed',
     configPath: path.join(HOME, '.config', 'zed', 'settings.json'),
     configKey: 'context_servers',
-    serverConfig: { command: { path: 'npx', args: ['-y', 'codebaxing'] } },
+    serverConfig: {
+      command: { path: 'npx', args: ['-y', 'codebaxing'] },
+      env: { CHROMADB_URL: 'http://localhost:8000' },
+    },
   });
 
   return configs;
@@ -419,7 +429,11 @@ async function main(): Promise<void> {
     }
     console.log('\n' + '─'.repeat(50));
     console.log(`\n✨ Done! (${success}/${selected.length})`);
-    console.log('\n📝 Restart your editor to use Codebaxing.\n');
+    console.log('\n📝 Next steps:');
+    console.log('   1. Start ChromaDB (required):');
+    console.log('      docker run -d -p 8000:8000 --name chromadb chromadb/chroma');
+    console.log('   2. Restart your editor');
+    console.log('   3. Ask: "Index my project at /path/to/project"\n');
     return;
   }
 
