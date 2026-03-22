@@ -74,7 +74,7 @@ function getMaxFileSize(): number {
 }
 
 // Max chunks to index (configurable via CODEBAXING_MAX_CHUNKS env var)
-// Default: 50000 chunks (~1 hour on CPU)
+// Default: 100000 chunks (~2 hours on CPU)
 function getMaxChunks(): number {
   const envMax = process.env.CODEBAXING_MAX_CHUNKS;
   if (envMax) {
@@ -83,7 +83,7 @@ function getMaxChunks(): number {
       return max;
     }
   }
-  return 50000; // Default 50k chunks
+  return 100000; // Default 100k chunks
 }
 
 // ─── File Discovery ──────────────────────────────────────────────────────────
@@ -398,7 +398,7 @@ export class SourceRetriever {
       if (this.verbose) {
         console.log(`\n⚠️  Chunk limit reached (${chunksToIndex.length.toLocaleString()} > ${maxChunks.toLocaleString()})`);
         console.log(`   Sampling ${maxChunks.toLocaleString()} most important chunks...`);
-        console.log(`   Tip: Set CODEBAXING_MAX_CHUNKS=100000 to increase limit\n`);
+        console.log(`   Tip: Set CODEBAXING_MAX_CHUNKS=200000 to increase limit\n`);
       }
       // Sort by code length (longer = more important) and take top N
       chunksToIndex.sort((a, b) => b.text.length - a.text.length);
