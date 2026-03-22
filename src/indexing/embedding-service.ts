@@ -3,9 +3,34 @@
  *
  * Runs ONNX models locally in Node.js — no external server needed.
  * Default model: Xenova/all-MiniLM-L6-v2 (384 dims, fast, well-supported)
+ *
+ * GPU Support:
+ *   Set CODEBAXING_DEVICE environment variable:
+ *   - 'cpu' (default): Use CPU
+ *   - 'cuda': Use NVIDIA GPU (requires CUDA)
+ *   - 'webgpu': Use WebGPU (experimental, browser-like environment)
+ *   - 'auto': Auto-detect best available device
  */
 
 import { EmbeddingError } from '../core/exceptions.js';
+
+// ─── Device Configuration ─────────────────────────────────────────────────────
+
+export type DeviceType = 'cpu' | 'cuda' | 'webgpu' | 'auto';
+
+const VALID_DEVICES: DeviceType[] = ['cpu', 'cuda', 'webgpu', 'auto'];
+
+/**
+ * Get the configured device from environment variable.
+ * Defaults to 'cpu' for maximum compatibility.
+ */
+export function getConfiguredDevice(): DeviceType {
+  const envDevice = process.env.CODEBAXING_DEVICE?.toLowerCase();
+  if (envDevice && VALID_DEVICES.includes(envDevice as DeviceType)) {
+    return envDevice as DeviceType;
+  }
+  return 'cpu';
+}
 
 // Lazy import transformers (heavy dependency)
 // Using any types for transformers.js as its types are complex and version-dependent
@@ -61,6 +86,7 @@ export const DEFAULT_MODEL = 'all-MiniLM-L6-v2';
 export class EmbeddingService {
   private modelName: string;
   private config: EmbeddingModelConfig;
+  private device: DeviceType;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private extractor: any = null;
   private loading: Promise<void> | null = null;
@@ -81,10 +107,11 @@ export class EmbeddingService {
 
   constructor(
     modelName: string = DEFAULT_MODEL,
-    options: { showProgress?: boolean } = {}
+    options: { showProgress?: boolean; device?: DeviceType } = {}
   ) {
     this.modelName = modelName;
     this.showProgress = options.showProgress ?? false;
+    this.device = options.device ?? getConfiguredDevice();
 
     if (modelName in EMBEDDING_MODELS) {
       this.config = { ...EMBEDDING_MODELS[modelName] };
@@ -100,6 +127,11 @@ export class EmbeddingService {
     }
   }
 
+  /** Get the device being used for inference */
+  getDevice(): DeviceType {
+    return this.device;
+  }
+
   get dimensions(): number {
     return this.config.dimensions;
   }
@@ -111,19 +143,40 @@ export class EmbeddingService {
     this.loading = (async () => {
       await importTransformers();
 
+      const deviceLabel = this.device === 'cpu' ? 'CPU' : this.device.toUpperCase();
       if (this.showProgress) {
-        console.log(`Loading embedding model: ${this.config.modelId}`);
+        console.log(`Loading embedding model: ${this.config.modelId} (device: ${deviceLabel})`);
+      }
+
+      // Build pipeline options
+      const pipelineOptions: Record<string, unknown> = {
+        quantized: true,
+      };
+
+      // Configure device (Transformers.js uses 'device' option)
+      // Note: 'auto' lets Transformers.js pick the best available
+      if (this.device !== 'cpu') {
+        pipelineOptions.device = this.device;
       }
 
       try {
-        this.extractor = await pipeline('feature-extraction', this.config.modelId, {
-          quantized: true,
-        });
+        this.extractor = await pipeline('feature-extraction', this.config.modelId, pipelineOptions);
       } catch (e) {
-        // Fall back to default model if custom model fails
-        if (this.modelName !== DEFAULT_MODEL) {
+        const errorMsg = (e as Error).message;
+
+        // If GPU failed, try falling back to CPU
+        if (this.device !== 'cpu' && (errorMsg.includes('GPU') || errorMsg.includes('CUDA') || errorMsg.includes('WebGPU'))) {
           console.warn(
-            `Failed to load model ${this.config.modelId}: ${(e as Error).message}. ` +
+            `Failed to use ${deviceLabel}: ${errorMsg}. Falling back to CPU.`
+          );
+          this.device = 'cpu';
+          this.extractor = await pipeline('feature-extraction', this.config.modelId, {
+            quantized: true,
+          });
+        } else if (this.modelName !== DEFAULT_MODEL) {
+          // Fall back to default model if custom model fails
+          console.warn(
+            `Failed to load model ${this.config.modelId}: ${errorMsg}. ` +
             `Falling back to ${DEFAULT_MODEL}`
           );
           this.config = { ...EMBEDDING_MODELS[DEFAULT_MODEL] };
@@ -131,12 +184,13 @@ export class EmbeddingService {
             quantized: true,
           });
         } else {
-          throw new EmbeddingError(`Failed to load embedding model: ${(e as Error).message}`);
+          throw new EmbeddingError(`Failed to load embedding model: ${errorMsg}`);
         }
       }
 
       if (this.showProgress) {
-        console.log(`Model loaded: ${this.config.modelId} (${this.config.dimensions} dims)`);
+        const actualDevice = this.device === 'cpu' ? 'CPU' : this.device.toUpperCase();
+        console.log(`Model loaded: ${this.config.modelId} (${this.config.dimensions} dims, ${actualDevice})`);
       }
       this.loading = null;
     })();
@@ -221,6 +275,7 @@ export class EmbeddingService {
   getStats(): Record<string, unknown> {
     return {
       ...this.stats,
+      device: this.device,
       embeddingsPerSecond: this.stats.totalTime > 0
         ? this.stats.totalEmbeddings / this.stats.totalTime
         : 0,
@@ -247,12 +302,16 @@ const embeddingServices: Map<string, EmbeddingService> = new Map();
 
 export function getEmbeddingService(
   modelName: string = DEFAULT_MODEL,
-  options: { showProgress?: boolean } = {}
+  options: { showProgress?: boolean; device?: DeviceType } = {}
 ): EmbeddingService {
-  if (!embeddingServices.has(modelName)) {
-    embeddingServices.set(modelName, new EmbeddingService(modelName, options));
+  // Include device in cache key to support different devices per model
+  const device = options.device ?? getConfiguredDevice();
+  const cacheKey = `${modelName}:${device}`;
+
+  if (!embeddingServices.has(cacheKey)) {
+    embeddingServices.set(cacheKey, new EmbeddingService(modelName, { ...options, device }));
   }
-  return embeddingServices.get(modelName)!;
+  return embeddingServices.get(cacheKey)!;
 }
 
 export async function resetEmbeddingService(modelName?: string): Promise<void> {

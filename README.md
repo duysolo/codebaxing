@@ -102,7 +102,16 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 3. **Storage**: Vectors stored in ChromaDB for fast similarity search
 4. **Search**: Query is embedded and matched against stored vectors
 
-## Storage
+## Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CHROMADB_URL` | ChromaDB server URL | (in-memory) |
+| `CODEBAXING_DEVICE` | Compute device | `cpu` |
+
+### Storage
 
 By default, the index is stored in memory and lost when the server restarts.
 
@@ -110,13 +119,25 @@ For persistent storage, run a ChromaDB server:
 
 ```bash
 docker run -p 8000:8000 chromadb/chroma
-```
-
-Then set the environment variable:
-
-```bash
 export CHROMADB_URL=http://localhost:8000
 ```
+
+### GPU Acceleration
+
+Enable GPU for faster embedding generation:
+
+```bash
+# NVIDIA GPU (requires CUDA)
+export CODEBAXING_DEVICE=cuda
+
+# Auto-detect best device
+export CODEBAXING_DEVICE=auto
+
+# WebGPU (experimental)
+export CODEBAXING_DEVICE=webgpu
+```
+
+Default is `cpu` which works everywhere.
 
 Metadata is stored in `.codebaxing/` folder within your project:
 - `metadata.json` - Index metadata and file timestamps

@@ -52,10 +52,21 @@ src/
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CHROMADB_URL` | ChromaDB server URL for persistent storage | (ephemeral mode) |
+| `CODEBAXING_DEVICE` | Compute device: `cpu`, `cuda`, `webgpu`, `auto` | `cpu` |
 
-Note: Without `CHROMADB_URL`, data is stored in memory and lost on restart.
+### ChromaDB Persistence
+Without `CHROMADB_URL`, data is stored in memory and lost on restart.
 To persist data, run ChromaDB server: `docker run -p 8000:8000 chromadb/chroma`
 then set `CHROMADB_URL=http://localhost:8000`.
+
+### GPU Acceleration
+Set `CODEBAXING_DEVICE` to enable GPU:
+- `cpu` (default): CPU inference, works everywhere
+- `cuda`: NVIDIA GPU (requires CUDA drivers)
+- `webgpu`: WebGPU backend (experimental)
+- `auto`: Auto-detect best available device
+
+Example: `CODEBAXING_DEVICE=cuda npm run dev`
 
 ## Commands
 

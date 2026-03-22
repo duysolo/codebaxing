@@ -102,7 +102,16 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 3. **Storage**: Vectors được lưu trong ChromaDB cho fast similarity search
 4. **Search**: Query được embed và matched với stored vectors
 
-## Lưu trữ
+## Cấu hình
+
+### Biến môi trường
+
+| Biến | Mô tả | Mặc định |
+|------|-------|----------|
+| `CHROMADB_URL` | URL ChromaDB server | (in-memory) |
+| `CODEBAXING_DEVICE` | Thiết bị tính toán | `cpu` |
+
+### Lưu trữ
 
 Mặc định, index được lưu trong memory và mất khi server restart.
 
@@ -110,13 +119,25 @@ Mặc định, index được lưu trong memory và mất khi server restart.
 
 ```bash
 docker run -p 8000:8000 chromadb/chroma
-```
-
-Sau đó set biến môi trường:
-
-```bash
 export CHROMADB_URL=http://localhost:8000
 ```
+
+### Tăng tốc GPU
+
+Bật GPU để tạo embedding nhanh hơn:
+
+```bash
+# NVIDIA GPU (cần CUDA)
+export CODEBAXING_DEVICE=cuda
+
+# Tự động chọn thiết bị tốt nhất
+export CODEBAXING_DEVICE=auto
+
+# WebGPU (thử nghiệm)
+export CODEBAXING_DEVICE=webgpu
+```
+
+Mặc định là `cpu`, hoạt động mọi nơi.
 
 Metadata được lưu trong thư mục `.codebaxing/` trong project:
 - `metadata.json` - Index metadata và file timestamps
