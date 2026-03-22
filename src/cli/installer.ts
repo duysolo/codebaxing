@@ -217,19 +217,13 @@ function showChromaDBError(): void {
   process.exit(1);
 }
 
-async function checkChromaDBConnection(): Promise<void> {
-  const chromaUrl = process.env.CHROMADB_URL;
+const DEFAULT_CHROMADB_URL = 'http://localhost:8000';
 
-  if (!chromaUrl) {
-    console.error('\n❌ CHROMADB_URL environment variable is not set!\n');
-    console.error('Quick fix:\n');
-    console.error('  1. Start ChromaDB:');
-    console.error('     docker run -d -p 8000:8000 chromadb/chroma\n');
-    console.error('  2. Set environment variable:');
-    console.error('     export CHROMADB_URL=http://localhost:8000\n');
-    console.error('  3. Run again\n');
-    process.exit(1);
-  }
+async function checkChromaDBConnection(): Promise<void> {
+  const chromaUrl = process.env.CHROMADB_URL || DEFAULT_CHROMADB_URL;
+
+  // Set the env var so SourceRetriever can use it
+  process.env.CHROMADB_URL = chromaUrl;
 
   console.log(`🔗 Checking ChromaDB connection (${chromaUrl})...`);
 

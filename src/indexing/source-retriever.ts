@@ -176,17 +176,9 @@ export class SourceRetriever {
       { showProgress: this.verbose }
     );
 
-    // Initialize ChromaDB - REQUIRED
+    // Initialize ChromaDB - defaults to localhost:8000
     // ChromaDB server must be running for persistent storage.
-    const chromaUrl = process.env.CHROMADB_URL;
-    if (!chromaUrl) {
-      throw new Error(
-        'CHROMADB_URL environment variable is required.\n\n' +
-        'Quick fix:\n' +
-        '  1. Start ChromaDB: docker run -d -p 8000:8000 chromadb/chroma\n' +
-        '  2. Set env var: export CHROMADB_URL=http://localhost:8000\n'
-      );
-    }
+    const chromaUrl = process.env.CHROMADB_URL || 'http://localhost:8000';
     if (this.persistPath) {
       fs.mkdirSync(this.persistPath, { recursive: true });
     }
