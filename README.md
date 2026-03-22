@@ -106,11 +106,26 @@ You: What decisions have we made about the database?
 
 ### Via CLI (Terminal)
 
-You can use Codebaxing directly from terminal without AI agents:
+You can use Codebaxing directly from terminal without AI agents.
+
+#### Prerequisites: Start ChromaDB
+
+CLI commands require ChromaDB server running:
+
+```bash
+# Start ChromaDB (required for CLI)
+docker run -d -p 8000:8000 chromadb/chroma
+
+# Set environment variable
+export CHROMADB_URL=http://localhost:8000
+```
 
 #### Step 1: Index your codebase (Required first)
 
 ```bash
+CHROMADB_URL=http://localhost:8000 npx codebaxing index /path/to/project
+
+# Or if you exported CHROMADB_URL:
 npx codebaxing index /path/to/project
 ```
 

@@ -166,23 +166,43 @@ async function runIndex(codebasePath: string): Promise<void> {
   // Dynamic import to avoid loading heavy dependencies upfront
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
-  const retriever = new SourceRetriever({
-    codebasePath: absolutePath,
-    embeddingModel: 'all-MiniLM-L6-v2',
-    verbose: true,
-  });
+  try {
+    const retriever = new SourceRetriever({
+      codebasePath: absolutePath,
+      embeddingModel: 'all-MiniLM-L6-v2',
+      verbose: true,
+    });
 
-  await retriever.indexCodebase();
+    await retriever.indexCodebase();
 
-  const stats = retriever.getStats();
-  console.log('\n📊 Index Statistics:');
-  console.log(`   Files:   ${stats.totalFiles}`);
-  console.log(`   Symbols: ${stats.totalSymbols}`);
-  console.log(`   Chunks:  ${stats.totalChunks}`);
-  console.log(`   Time:    ${stats.indexingTime?.toFixed(1)}s\n`);
+    const stats = retriever.getStats();
+    console.log('\n📊 Index Statistics:');
+    console.log(`   Files:   ${stats.totalFiles}`);
+    console.log(`   Symbols: ${stats.totalSymbols}`);
+    console.log(`   Chunks:  ${stats.totalChunks}`);
+    console.log(`   Time:    ${stats.indexingTime?.toFixed(1)}s\n`);
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message.includes('chromadb') || message.includes('Failed to connect')) {
+      showChromaDBError();
+    }
+    throw err;
+  }
 }
 
 // ─── Search Command ──────────────────────────────────────────────────────────
+
+function showChromaDBError(): void {
+  console.error('\n❌ ChromaDB connection failed!\n');
+  console.error('CLI commands require ChromaDB server running.\n');
+  console.error('Quick fix:\n');
+  console.error('  1. Start ChromaDB:');
+  console.error('     docker run -d -p 8000:8000 chromadb/chroma\n');
+  console.error('  2. Set environment variable:');
+  console.error('     export CHROMADB_URL=http://localhost:8000\n');
+  console.error('  3. Run again\n');
+  process.exit(1);
+}
 
 async function runSearch(query: string, options: { path?: string; limit?: number }): Promise<void> {
   const codebasePath = options.path || process.cwd();
@@ -196,35 +216,43 @@ async function runSearch(query: string, options: { path?: string; limit?: number
 
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
-  const retriever = new SourceRetriever({
-    codebasePath: absolutePath,
-    embeddingModel: 'all-MiniLM-L6-v2',
-    verbose: false,
-  });
+  try {
+    const retriever = new SourceRetriever({
+      codebasePath: absolutePath,
+      embeddingModel: 'all-MiniLM-L6-v2',
+      verbose: false,
+    });
 
-  // Check if index exists, if not, index first
-  const stats = retriever.getStats();
-  if (stats.totalChunks === 0) {
-    console.log('⚠️  No index found. Indexing first...\n');
-    await retriever.indexCodebase();
-    console.log('');
+    // Check if index exists, if not, index first
+    const stats = retriever.getStats();
+    if (stats.totalChunks === 0) {
+      console.log('⚠️  No index found. Indexing first...\n');
+      await retriever.indexCodebase();
+      console.log('');
+    }
+
+    const { sources } = await retriever.getSourcesForQuestion(query, { nResults: limit });
+
+    if (sources.length === 0) {
+      console.log('❌ No results found.\n');
+      return;
+    }
+
+    console.log('─'.repeat(60));
+    console.log('Results:\n');
+
+    sources.forEach((source, i) => {
+      console.log(`${i + 1}. ${source}`);
+    });
+
+    console.log('\n' + '─'.repeat(60) + '\n');
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message.includes('chromadb') || message.includes('Failed to connect')) {
+      showChromaDBError();
+    }
+    throw err;
   }
-
-  const { sources, documents } = await retriever.getSourcesForQuestion(query, { nResults: limit });
-
-  if (sources.length === 0) {
-    console.log('❌ No results found.\n');
-    return;
-  }
-
-  console.log('─'.repeat(60));
-  console.log('Results:\n');
-
-  sources.forEach((source, i) => {
-    console.log(`${i + 1}. ${source}`);
-  });
-
-  console.log('\n' + '─'.repeat(60) + '\n');
 }
 
 // ─── Stats Command ───────────────────────────────────────────────────────────
@@ -237,23 +265,31 @@ async function runStats(codebasePath?: string): Promise<void> {
 
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
-  const retriever = new SourceRetriever({
-    codebasePath: absolutePath,
-    embeddingModel: 'all-MiniLM-L6-v2',
-    verbose: false,
-  });
+  try {
+    const retriever = new SourceRetriever({
+      codebasePath: absolutePath,
+      embeddingModel: 'all-MiniLM-L6-v2',
+      verbose: false,
+    });
 
-  const stats = retriever.getStats();
+    const stats = retriever.getStats();
 
-  console.log('📊 Index Statistics:');
-  console.log(`   Files:       ${stats.totalFiles}`);
-  console.log(`   Symbols:     ${stats.totalSymbols}`);
-  console.log(`   Chunks:      ${stats.totalChunks}`);
-  console.log(`   Parse Errors: ${stats.parseErrors}`);
-  if (stats.indexingTime) {
-    console.log(`   Index Time:  ${stats.indexingTime.toFixed(1)}s`);
+    console.log('📊 Index Statistics:');
+    console.log(`   Files:       ${stats.totalFiles}`);
+    console.log(`   Symbols:     ${stats.totalSymbols}`);
+    console.log(`   Chunks:      ${stats.totalChunks}`);
+    console.log(`   Parse Errors: ${stats.parseErrors}`);
+    if (stats.indexingTime) {
+      console.log(`   Index Time:  ${stats.indexingTime.toFixed(1)}s`);
+    }
+    console.log('');
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message.includes('chromadb') || message.includes('Failed to connect')) {
+      showChromaDBError();
+    }
+    throw err;
   }
-  console.log('');
 }
 
 // ─── CLI ─────────────────────────────────────────────────────────────────────
