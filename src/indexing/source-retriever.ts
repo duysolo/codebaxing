@@ -53,7 +53,8 @@ export interface DiscoverFilesOptions {
 
 export function discoverFiles(
   codebasePath: string,
-  optionsOrExtensions?: Set<string> | DiscoverFilesOptions
+  optionsOrExtensions?: Set<string> | DiscoverFilesOptions,
+  showProgress: boolean = false
 ): string[] {
   // Handle both old signature (Set<string>) and new signature (options object)
   let exts: Set<string>;
@@ -69,6 +70,7 @@ export function discoverFiles(
 
   const files: string[] = [];
   const skippedFiles: { path: string; size: number }[] = [];
+  let dirsScanned = 0;
 
   function walk(dir: string) {
     let entries: fs.Dirent[];
@@ -76,6 +78,11 @@ export function discoverFiles(
       entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
+    }
+
+    dirsScanned++;
+    if (showProgress && dirsScanned % 100 === 0) {
+      process.stdout.write(`\rScanning directories... ${dirsScanned} dirs, ${files.length} files found`);
     }
 
     for (const entry of entries) {
@@ -104,13 +111,22 @@ export function discoverFiles(
 
   walk(codebasePath);
 
+  if (showProgress) {
+    process.stdout.write('\r' + ' '.repeat(80) + '\r'); // Clear progress line
+  }
+
   if (skippedFiles.length > 0) {
     const maxSizeMB = (maxFileSize / 1024 / 1024).toFixed(1);
     console.log(`\nSkipped ${skippedFiles.length} file(s) larger than ${maxSizeMB}MB:`);
-    for (const file of skippedFiles) {
+    // Only show first 10 skipped files to avoid spam
+    const showFiles = skippedFiles.slice(0, 10);
+    for (const file of showFiles) {
       const relativePath = path.relative(codebasePath, file.path);
       const sizeMB = (file.size / 1024 / 1024).toFixed(2);
       console.log(`  - ${relativePath} (${sizeMB}MB)`);
+    }
+    if (skippedFiles.length > 10) {
+      console.log(`  ... and ${skippedFiles.length - 10} more`);
     }
     console.log(`\nTip: Set CODEBAXING_MAX_FILE_SIZE=<MB> to change the limit.`);
     console.log(`     Example: CODEBAXING_MAX_FILE_SIZE=5 npx codebaxing index /path\n`);
@@ -257,8 +273,16 @@ export class SourceRetriever {
 
     // Step 1: Find all files
     const extensionsSet = new Set(fileExtensions);
-    const allFiles = discoverFiles(this.codebasePath, extensionsSet);
+    const allFiles = discoverFiles(this.codebasePath, extensionsSet, this.verbose);
     this.stats.totalFiles = allFiles.length;
+
+    // Warn for large codebases
+    if (this.verbose && allFiles.length > 1000) {
+      const estimatedMinutes = Math.ceil(allFiles.length / 500); // ~500 files/min estimate
+      console.log(`\n⚠️  Large codebase detected (${allFiles.length.toLocaleString()} files)`);
+      console.log(`   Estimated time: ${estimatedMinutes}-${estimatedMinutes * 2} minutes`);
+      console.log(`   Tip: Use incremental indexing for faster updates after first index\n`);
+    }
 
     // Store file modification times
     const fileMtimes: Record<string, number> = {};
@@ -276,6 +300,7 @@ export class SourceRetriever {
     emit('parsing_start', { total: allFiles.length });
 
     // Create a progress callback for CLI if verbose
+    const parseStartTime = performance.now();
     const parseProgressCallback = options.progressCallback ?? (
       this.verbose ? (eventType: string, data: Record<string, unknown>) => {
         if (eventType === 'file_parsed') {
@@ -284,7 +309,11 @@ export class SourceRetriever {
           const filePath = data.path as string;
           const relativePath = path.relative(this.codebasePath, filePath);
           const pct = ((index / total) * 100).toFixed(1);
-          process.stdout.write(`\rParsing: ${index}/${total} (${pct}%) - ${relativePath.slice(0, 50).padEnd(50)}`);
+          const elapsed = (performance.now() - parseStartTime) / 1000;
+          const rate = index / elapsed || 1;
+          const remaining = (total - index) / rate;
+          const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
+          process.stdout.write(`\rParsing: ${index.toLocaleString()}/${total.toLocaleString()} (${pct}%) ETA: ${eta} - ${relativePath.slice(0, 40).padEnd(40)}`);
         }
       } : undefined
     );
@@ -321,7 +350,8 @@ export class SourceRetriever {
       this.log(`\nGenerating embeddings for ${chunks.length} chunks...`);
     }
 
-    const batchSize = 100;
+    // Use larger batch size for better performance
+    const batchSize = 200;
     const embeddingStartTime = performance.now();
 
     for (let i = 0; i < chunks.length; i += batchSize) {
@@ -337,10 +367,11 @@ export class SourceRetriever {
       if (!options.progressCallback && this.verbose) {
         const pct = ((currentProgress / chunks.length) * 100).toFixed(1);
         const elapsed = (performance.now() - embeddingStartTime) / 1000;
-        const rate = currentProgress / elapsed;
+        const rate = currentProgress / elapsed || 1;
         const remaining = (chunks.length - currentProgress) / rate;
         const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
-        process.stdout.write(`\rEmbedding: ${currentProgress}/${chunks.length} (${pct}%) - ETA: ${eta}    `);
+        const rateStr = rate > 0 ? `${rate.toFixed(0)}/s` : '';
+        process.stdout.write(`\rEmbedding: ${currentProgress.toLocaleString()}/${chunks.length.toLocaleString()} (${pct}%) - ETA: ${eta} ${rateStr}    `);
       }
 
       try {
