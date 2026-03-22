@@ -31,10 +31,34 @@ import {
 
 // ─── Initialize MCP Server ──────────────────────────────────────────────────
 
-const server = new McpServer({
-  name: 'Codebaxing',
-  version: '0.1.0',
-});
+const server = new McpServer(
+  {
+    name: 'Codebaxing',
+    version: '0.1.0',
+  },
+  {
+    instructions: `Codebaxing: Semantic code search + project memory.
+
+START: Call 'index' with codebase path to enable all features.
+
+CODE SEARCH (after index):
+- search - Find relevant code using natural language queries
+- stats - Check index status (files, symbols, chunks indexed)
+- languages - See supported file extensions
+
+PROJECT MEMORY (after index):
+- remember - Store decisions, preferences, notes, status updates
+- recall - Retrieve memories by semantic search
+- forget - Remove outdated information (destructive)
+- memory-stats - View memory statistics
+
+TYPICAL WORKFLOW:
+1. index(path="/project") - Index codebase (required first step)
+2. recall("user preferences") - Check existing context
+3. remember("Decision: Using Redis for caching", memory_type="decision")
+4. search("authentication flow") - Find relevant code`,
+  }
+);
 
 // ─── Index Tool ──────────────────────────────────────────────────────────────
 
@@ -54,6 +78,7 @@ Creates a .codebaxing/ folder in the codebase directory.`,
     file_extensions: z.array(z.string()).optional().describe('File extensions to include'),
     embedding_model: z.string().default('all-MiniLM-L6-v2').describe('Embedding model'),
   },
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
     const codebasePath = path.resolve(args.path);
@@ -101,6 +126,7 @@ Examples:
     symbol_type: z.string().optional().describe('Filter by symbol type'),
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
 
@@ -138,6 +164,7 @@ server.tool(
   {
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
     if (!state.isLoaded && args.path) await ensureLoaded(state, args.path);
@@ -160,6 +187,7 @@ server.tool(
   'languages',
   'List all supported programming languages and file extensions.',
   {},
+  { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async () => {
     const langMap: Record<string, string[]> = {};
     for (const [ext, lang] of Object.entries(EXTENSION_MAP)) {
@@ -192,6 +220,7 @@ TTL options: session (24h), day, week, month, permanent (default)`,
     ttl: z.enum(['session', 'day', 'week', 'month', 'permanent']).default('permanent').describe('Time-to-live'),
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   async (args) => {
     const state = getState();
     if (!state.codebasePath && args.path) await ensureLoaded(state, args.path);
@@ -239,6 +268,7 @@ Filters: memory_type, tags, time_range (today, week, month, all)`,
     time_range: z.string().optional().describe('Time filter'),
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
     if (!state.codebasePath && args.path) await ensureLoaded(state, args.path);
@@ -285,6 +315,7 @@ Delete by: memory_id, memory_type, tags, older_than (1d, 7d, 30d, 1y)`,
     older_than: z.string().optional().describe('Delete older than: 1d, 7d, 30d, 1y'),
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
     if (!state.codebasePath && args.path) await ensureLoaded(state, args.path);
@@ -330,6 +361,7 @@ server.tool(
   {
     path: z.string().optional().describe('Codebase path for auto-loading'),
   },
+  { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   async (args) => {
     const state = getState();
     if (!state.codebasePath && args.path) await ensureLoaded(state, args.path);
