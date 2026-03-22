@@ -3,7 +3,21 @@
 [![npm version](https://img.shields.io/npm/v/codebaxing.svg)](https://www.npmjs.com/package/codebaxing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+[English](README.md) | **[Tiếng Việt](README.vi.md)**
+
 MCP server cho **semantic code search**. Index codebase và tìm kiếm bằng ngôn ngữ tự nhiên.
+
+## Mục lục
+
+- [Ý tưởng](#ý-tưởng)
+- [Bắt đầu nhanh](#bắt-đầu-nhanh)
+- [Cách sử dụng](#cách-sử-dụng)
+  - [Qua AI Agents (MCP)](#qua-ai-agents-mcp)
+  - [Qua CLI (Terminal)](#qua-cli-terminal)
+- [Cài đặt](#cài-đặt)
+- [Cơ chế hoạt động](#cơ-chế-hoạt-động)
+- [Cấu hình](#cấu-hình)
+- [Ngôn ngữ hỗ trợ](#ngôn-ngữ-hỗ-trợ)
 
 ## Ý tưởng
 
@@ -11,7 +25,6 @@ Tìm kiếm code truyền thống (grep, ripgrep) chỉ match exact text. Nhưng
 
 - *"Logic xác thực người dùng ở đâu?"* - không phải `grep "authentication"`
 - *"Tìm code kết nối database"* - không phải `grep "database"`
-- *"Xử lý lỗi hoạt động như thế nào?"* - không phải `grep "error"`
 
 **Codebaxing** giải quyết vấn đề này bằng **semantic search**:
 
@@ -22,238 +35,173 @@ Tìm được: login(), validateCredentials(), checkPassword(), authMiddleware()
           (dù chúng không chứa từ "authentication")
 ```
 
-## Cơ chế hoạt động
+## Bắt đầu nhanh
 
-### Kiến trúc tổng quan
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         INDEXING                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Source Files (.py, .ts, .js, .go, .rs, ...)                  │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│   │ Tree-sitter  │───▶│   Symbols    │───▶│  Embedding   │     │
-│   │   Parser     │    │  Extraction  │    │    Model     │     │
-│   └──────────────┘    └──────────────┘    └──────────────┘     │
-│         │                    │                    │             │
-│    Parse AST            Functions,          Text → Vector       │
-│                        Classes, etc.       (384 chiều)          │
-│                                                  │              │
-│                                                  ▼              │
-│                                          ┌──────────────┐      │
-│                                          │   ChromaDB   │      │
-│                                          │  (vectors)   │      │
-│                                          └──────────────┘      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                          SEARCH                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   "find auth code"                                              │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐         ┌──────────────┐                    │
-│   │  Embedding   │────────▶│   ChromaDB   │                    │
-│   │    Model     │  query  │    Query     │                    │
-│   └──────────────┘  vector └──────────────┘                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Cosine Similarity                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Top-k Results                        │
-│                       (login.py, auth.ts, ...)                  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Quy trình chi tiết
-
-#### 1. Parsing (Tree-sitter)
-
-Tree-sitter parse source code thành Abstract Syntax Tree (AST), trích xuất các symbols có ý nghĩa:
-
-```python
-# Input: auth.py
-def login(username, password):
-    """Authenticate user credentials"""
-    if validate(username, password):
-        return create_session(username)
-    raise AuthError("Invalid credentials")
-```
-
-```
-# Output: Symbol
-{
-  name: "login",
-  type: "function",
-  signature: "def login(username, password)",
-  code: "def login(username, password):...",
-  filepath: "auth.py",
-  lineStart: 1,
-  lineEnd: 6
-}
-```
-
-#### 2. Embedding (all-MiniLM-L6-v2)
-
-Mỗi code chunk được chuyển thành vector 384 chiều bằng neural network:
-
-```
-"def login(username, password): authenticate user..."
-                    ↓
-    Embedding Model (chạy local, ONNX)
-                    ↓
-    [0.12, -0.34, 0.56, 0.08, ..., -0.22]  (384 số)
-```
-
-Model hiểu được quan hệ ngữ nghĩa:
-- `"authentication"` ≈ `"login"` ≈ `"credentials"` (vectors gần nhau)
-- `"database"` ≈ `"query"` ≈ `"SQL"` (vectors gần nhau)
-- `"authentication"` ≠ `"database"` (vectors xa nhau)
-
-#### 3. Lưu trữ (ChromaDB)
-
-Vectors được lưu trong ChromaDB, database tối ưu cho similarity search:
-
-```
-ChromaDB Collection:
-┌─────────────────────────────────────────────────────┐
-│ ID          │ Vector (384d)      │ Metadata         │
-├─────────────────────────────────────────────────────┤
-│ chunk_001   │ [0.12, -0.34, ...] │ {file: auth.py}  │
-│ chunk_002   │ [0.45, 0.23, ...]  │ {file: db.py}    │
-│ chunk_003   │ [-0.11, 0.67, ...] │ {file: api.ts}   │
-│ ...         │ ...                │ ...              │
-└─────────────────────────────────────────────────────┘
-```
-
-#### 4. Tìm kiếm (Cosine Similarity)
-
-Khi bạn search, query được embed và so sánh với tất cả vectors đã lưu:
-
-```
-Query: "user authentication"
-              ↓
-Query Vector: [0.15, -0.31, 0.52, ...]
-              ↓
-So sánh với tất cả vectors bằng cosine similarity:
-  - chunk_001 (login): similarity = 0.89  ← CAO
-  - chunk_002 (db):    similarity = 0.23  ← THẤP
-  - chunk_003 (auth):  similarity = 0.85  ← CAO
-              ↓
-Trả về top-k chunks tương tự nhất
-```
-
-### Tại sao Semantic Search hoạt động
-
-Embedding model được train trên hàng triệu cặp text, học được rằng:
-
-| Khái niệm A | ≈ Tương tự với | Khoảng cách |
-|-------------|----------------|-------------|
-| authentication | login, credentials, auth, signin | Gần |
-| database | query, SQL, connection, ORM | Gần |
-| error | exception, failure, catch, throw | Gần |
-| parse | tokenize, lexer, AST, syntax | Gần |
-
-Điều này cho phép tìm code theo **ý nghĩa**, không chỉ từ khóa.
-
-## Tính năng
-
-- **Semantic Code Search**: Tìm code bằng cách mô tả những gì bạn cần
-- **24+ Ngôn ngữ**: Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, và nhiều hơn nữa
-- **Memory Layer**: Lưu trữ và truy xuất context dự án qua các session
-- **Incremental Indexing**: Chỉ re-index các file đã thay đổi
-- **100% Local**: Không gọi API, không cloud, hoạt động offline
-- **GPU Acceleration**: Hỗ trợ WebGPU/CUDA tùy chọn
-
-## Yêu cầu
-
-- Node.js >= 20.0.0
-- ~500MB dung lượng đĩa cho embedding model (tải xuống lần chạy đầu tiên)
-
-## Cài đặt
-
-### Cài nhanh (Khuyến nghị)
+### 1. Cài vào AI editor của bạn
 
 ```bash
-# Cài vào Claude Desktop
-npx codebaxing install
-
-# Cài vào Cursor
-npx codebaxing install --cursor
-
-# Cài vào Windsurf
-npx codebaxing install --windsurf
-
-# Cài vào tất cả editors
-npx codebaxing install --all
+npx codebaxing install              # Claude Desktop
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf
+npx codebaxing install --all        # Tất cả editors
 ```
 
-Sau đó restart editor. Xong!
+### 2. Khởi động lại editor
 
-### Gỡ cài đặt
+### 3. Bắt đầu sử dụng
 
-```bash
-npx codebaxing uninstall        # Gỡ khỏi Claude Desktop
-npx codebaxing uninstall --all  # Gỡ khỏi tất cả editors
+Trong Claude Desktop (hoặc Cursor, Windsurf...):
+
+```
+Bạn: Index project của tôi tại /path/to/myproject
+Claude: [gọi index tool]
+
+Bạn: Tìm logic xác thực
+Claude: [gọi search tool, trả về code liên quan]
 ```
 
-### CLI Commands (Dùng trực tiếp)
+## Cách sử dụng
+
+### Qua AI Agents (MCP)
+
+Sau khi cài vào AI editor, bạn tương tác qua hội thoại tự nhiên:
+
+#### Bước 1: Index codebase (Bắt buộc đầu tiên)
+
+```
+Bạn: Index codebase tại /Users/me/projects/myapp
+```
+
+Claude sẽ gọi `index(path="/Users/me/projects/myapp")` và hiển thị tiến trình.
+
+> **Lưu ý:** Lần đầu chạy sẽ download embedding model (~90MB), mất 1-2 phút.
+
+#### Bước 2: Tìm kiếm code
+
+```
+Bạn: Tìm code xử lý xác thực người dùng
+Bạn: Logic kết nối database ở đâu?
+Bạn: Cho tôi xem patterns xử lý lỗi
+```
+
+#### Bước 3: Sử dụng memory (tùy chọn)
+
+```
+Bạn: Ghi nhớ rằng chúng ta dùng PostgreSQL với Prisma ORM
+Bạn: Những quyết định nào đã được đưa ra về database?
+```
+
+#### Bảng tham chiếu MCP Tools
+
+| Tool | Mô tả | Ví dụ |
+|------|-------|-------|
+| `index` | Index codebase (**bắt buộc đầu tiên**) | `index(path="/project")` |
+| `search` | Tìm kiếm code semantic | `search(question="auth middleware")` |
+| `stats` | Thống kê index | `stats()` |
+| `languages` | Extensions hỗ trợ | `languages()` |
+| `remember` | Lưu memory | `remember(content="Dùng Redis", memory_type="decision")` |
+| `recall` | Truy xuất memories | `recall(query="database")` |
+| `forget` | Xóa memories | `forget(memory_type="note")` |
+| `memory-stats` | Thống kê memory | `memory-stats()` |
+
+### Qua CLI (Terminal)
 
 Bạn có thể dùng Codebaxing trực tiếp từ terminal mà không cần AI agents:
 
-```bash
-# Index codebase
-npx codebaxing index /path/to/project
+#### Bước 1: Index codebase (Bắt buộc đầu tiên)
 
-# Tìm kiếm code
+```bash
+npx codebaxing index /path/to/project
+```
+
+Output:
+```
+🔧 Codebaxing - Index Codebase
+
+📁 Path: /path/to/project
+
+================================================================================
+INDEXING CODEBASE
+================================================================================
+Found 47 files
+Parsed 645 symbols from 47 files
+Generating embeddings for 645 chunks...
+Model loaded: Xenova/all-MiniLM-L6-v2 (384 dims, CPU)
+
+================================================================================
+INDEXING COMPLETE
+================================================================================
+Files parsed:      47
+Symbols extracted: 645
+Chunks created:    645
+Time elapsed:      21.9s
+```
+
+#### Bước 2: Tìm kiếm code
+
+```bash
 npx codebaxing search "authentication middleware"
 npx codebaxing search "database connection" --path ./src --limit 10
+```
 
-# Xem thống kê
+Output:
+```
+🔧 Codebaxing - Search
+
+📁 Path:  /path/to/project
+🔍 Query: "authentication middleware"
+📊 Limit: 5
+
+────────────────────────────────────────────────────────────
+Results:
+
+1. src/middleware/auth.ts:15 - authMiddleware()
+2. src/services/auth.ts:42 - validateToken()
+3. src/routes/login.ts:8 - loginHandler()
+
+────────────────────────────────────────────────────────────
+```
+
+#### Bước 3: Xem thống kê
+
+```bash
 npx codebaxing stats /path/to/project
 ```
 
-**Lưu ý:** Để lưu trữ vĩnh viễn, chạy ChromaDB trước:
+#### Bảng tham chiếu CLI Commands
+
+| Command | Mô tả |
+|---------|-------|
+| `npx codebaxing install [--editor]` | Cài MCP server vào AI editor |
+| `npx codebaxing uninstall [--editor]` | Gỡ MCP server |
+| `npx codebaxing index <path>` | Index codebase |
+| `npx codebaxing search <query> [options]` | Tìm kiếm codebase đã index |
+| `npx codebaxing stats [path]` | Hiển thị thống kê index |
+| `npx codebaxing --help` | Hiển thị help |
+
+**Search options:**
+- `--path, -p <path>` - Đường dẫn codebase (mặc định: thư mục hiện tại)
+- `--limit, -n <number>` - Số kết quả (mặc định: 5)
+
+## Cài đặt
+
+### Cách 1: Cài nhanh (Khuyến nghị)
+
 ```bash
-docker run -d -p 8000:8000 chromadb/chroma
-export CHROMADB_URL=http://localhost:8000
+npx codebaxing install              # Claude Desktop (mặc định)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # Tất cả editors
 ```
 
-### Cài thủ công
+Sau đó restart editor.
 
-Nếu muốn cấu hình thủ công, xem [Cấu hình thủ công](#cấu-hình-claude-desktop) bên dưới.
+### Cách 2: Cấu hình thủ công
 
-### (Tùy chọn) Persistent Storage
+#### Claude Desktop
 
-Mặc định, index được lưu trong memory và mất khi server restart.
-
-Để lưu trữ vĩnh viễn, chạy ChromaDB:
-
-```bash
-# Dùng Docker (khuyến nghị)
-docker run -d -p 8000:8000 chromadb/chroma
-
-# Set biến môi trường
-export CHROMADB_URL=http://localhost:8000
-```
-
-### Cấu hình thủ công
-
-#### Cấu hình Claude Desktop
-
-Thêm vào file config của Claude Desktop:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-#### Qua npx (không cần cài):
+Thêm vào `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) hoặc `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -265,61 +213,10 @@ Thêm vào file config của Claude Desktop:
   }
 }
 ```
-
-#### Qua global install:
-
-```bash
-npm install -g codebaxing
-```
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "codebaxing"
-    }
-  }
-}
-```
-
-#### Với persistent storage (ChromaDB):
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-#### Từ source (development):
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "node",
-      "args": ["/path/to/codebaxing/dist/mcp/server.js"]
-    }
-  }
-}
-```
-
-### Khởi động lại Claude Desktop
-
-Các tool Codebaxing sẽ có sẵn trong Claude.
-
-### Tích hợp với AI Agents khác
 
 #### Cursor
 
-Thêm vào Cursor settings (`~/.cursor/mcp.json`):
+Thêm vào `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -332,9 +229,9 @@ Thêm vào Cursor settings (`~/.cursor/mcp.json`):
 }
 ```
 
-#### Windsurf (Codeium)
+#### Windsurf
 
-Thêm vào Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
+Thêm vào `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
@@ -342,6 +239,23 @@ Thêm vào Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
     "codebaxing": {
       "command": "npx",
       "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### Zed
+
+Thêm vào `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "codebaxing": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "codebaxing"]
+      }
     }
   }
 }
@@ -349,7 +263,7 @@ Thêm vào Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
 
 #### VS Code + Continue
 
-Thêm vào Continue config (`~/.continue/config.json`):
+Thêm vào `~/.continue/config.json`:
 
 ```json
 {
@@ -367,79 +281,67 @@ Thêm vào Continue config (`~/.continue/config.json`):
 }
 ```
 
-#### Zed
-
-Thêm vào Zed settings (`~/.config/zed/settings.json`):
-
-```json
-{
-  "context_servers": {
-    "codebaxing": {
-      "command": {
-        "path": "npx",
-        "args": ["-y", "codebaxing"]
-      }
-    }
-  }
-}
-```
-
-#### MCP Client khác
-
-Với bất kỳ MCP client nào, dùng stdio transport:
+### Gỡ cài đặt
 
 ```bash
-# Command
-npx -y codebaxing
-
-# Hoặc nếu đã install global
-codebaxing
+npx codebaxing uninstall            # Claude Desktop
+npx codebaxing uninstall --all      # Tất cả editors
 ```
 
-## Sử dụng
+## Cơ chế hoạt động
 
-### MCP Tools
+### Kiến trúc
 
-| Tool | Mô tả |
-|------|-------|
-| `index` | Index codebase. Modes: `auto` (incremental), `full`, `load-only` |
-| `search` | Semantic search. Trả về ranked code chunks |
-| `stats` | Thống kê index (files, symbols, chunks) |
-| `languages` | Liệt kê các file extensions được hỗ trợ |
-| `remember` | Lưu memories (conversation, status, decision, preference, doc, note) |
-| `recall` | Semantic search trên memories |
-| `forget` | Xóa memories theo ID, type, tags, hoặc tuổi |
-| `memory-stats` | Thống kê memory theo type |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         INDEXING                                │
+├─────────────────────────────────────────────────────────────────┤
+│   Source Files (.py, .ts, .js, .go, .rs, ...)                  │
+│         │                                                       │
+│         ▼                                                       │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│   │ Tree-sitter  │───▶│   Symbols    │───▶│  Embedding   │     │
+│   │   Parser     │    │  Extraction  │    │    Model     │     │
+│   └──────────────┘    └──────────────┘    └──────────────┘     │
+│         │                    │                    │             │
+│    Parse AST            Functions,          Text → Vector       │
+│                        Classes, etc.        (384 chiều)         │
+│                                                  │              │
+│                                                  ▼              │
+│                                          ┌──────────────┐      │
+│                                          │   ChromaDB   │      │
+│                                          │  (vectors)   │      │
+│                                          └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
 
-### Ví dụ Workflow
+┌─────────────────────────────────────────────────────────────────┐
+│                          SEARCH                                 │
+├─────────────────────────────────────────────────────────────────┤
+│   "find auth code"                                              │
+│         │                                                       │
+│         ▼                                                       │
+│   ┌──────────────┐         ┌──────────────┐                    │
+│   │  Embedding   │────────▶│   ChromaDB   │                    │
+│   │    Model     │  query  │    Query     │                    │
+│   └──────────────┘  vector └──────────────┘                    │
+│                                   │                             │
+│                                   ▼                             │
+│                            Cosine Similarity                    │
+│                                   │                             │
+│                                   ▼                             │
+│                            Top-k Results                        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-1. **Index codebase:**
-   ```
-   index(path="/path/to/your/project")
-   ```
+### Tại sao Semantic Search hoạt động
 
-2. **Tìm kiếm code:**
-   ```
-   search(question="authentication middleware")
-   search(question="database connection", language="typescript")
-   search(question="error handling", symbol_type="function")
-   ```
+Embedding model hiểu rằng:
 
-3. **Lưu context:**
-   ```
-   remember(content="Sử dụng PostgreSQL với Prisma ORM", memory_type="decision")
-   remember(content="Auth dùng JWT tokens", memory_type="doc", tags=["auth", "security"])
-   ```
-
-4. **Truy xuất context:**
-   ```
-   recall(query="database setup")
-   recall(query="authentication", memory_type="decision")
-   ```
-
-## Ngôn ngữ được hỗ trợ
-
-Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, PHP, Scala, Swift, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, CSS, HTML, Vue, JSON, YAML, TOML, Makefile
+| Query | Tìm được (dù không match exact) |
+|-------|----------------------------------|
+| "authentication" | login, credentials, auth, signin, validateUser |
+| "database" | query, SQL, connection, ORM, repository |
+| "error handling" | try/catch, exception, throw, ErrorBoundary |
 
 ## Cấu hình
 
@@ -448,62 +350,65 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 | Biến | Mô tả | Mặc định |
 |------|-------|----------|
 | `CHROMADB_URL` | URL ChromaDB server để lưu trữ vĩnh viễn | (in-memory) |
-| `CODEBAXING_DEVICE` | Thiết bị tính toán cho embeddings | `cpu` |
+| `CODEBAXING_DEVICE` | Thiết bị tính toán: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
+
+### Lưu trữ vĩnh viễn
+
+Mặc định, index được lưu trong memory và mất khi server restart.
+
+Để lưu trữ vĩnh viễn:
+
+```bash
+# Khởi động ChromaDB
+docker run -d -p 8000:8000 chromadb/chroma
+
+# Set biến môi trường
+export CHROMADB_URL=http://localhost:8000
+```
+
+Hoặc trong MCP config:
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
 
 ### Tăng tốc GPU
 
-Bật GPU để tạo embedding nhanh hơn:
-
 ```bash
-# WebGPU (thử nghiệm, dùng Metal trên macOS)
-export CODEBAXING_DEVICE=webgpu
-
-# Tự động chọn thiết bị tốt nhất
-export CODEBAXING_DEVICE=auto
-
-# NVIDIA GPU (chỉ Linux/Windows, cần CUDA)
-export CODEBAXING_DEVICE=cuda
+export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
+export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
+export CODEBAXING_DEVICE=auto    # Tự động detect
 ```
 
-Mặc định là `cpu`, hoạt động mọi nơi.
+**Lưu ý:** macOS không hỗ trợ CUDA. Dùng `webgpu` để tăng tốc trên Mac.
 
-**Lưu ý:** macOS không hỗ trợ CUDA (không có NVIDIA drivers). Dùng `webgpu` để tăng tốc trên Mac.
+## Ngôn ngữ hỗ trợ
 
-### Lưu trữ
+Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, PHP, Scala, Swift, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, CSS, HTML, Vue, JSON, YAML, TOML, Makefile
 
-Metadata được lưu trong thư mục `.codebaxing/` trong project:
-- `metadata.json` - Index metadata và file timestamps
+## Tính năng
 
-## Development
+- **Semantic Code Search**: Tìm code bằng cách mô tả những gì bạn cần
+- **24+ Ngôn ngữ**: Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, và nhiều hơn nữa
+- **Memory Layer**: Lưu trữ và truy xuất context dự án qua các session
+- **Incremental Indexing**: Chỉ re-index các file đã thay đổi
+- **100% Local**: Không gọi API, không cloud, hoạt động offline
+- **GPU Acceleration**: Hỗ trợ WebGPU/CUDA tùy chọn
 
-```bash
-npm run dev       # Chạy với tsx (không cần build)
-npm run build     # Compile TypeScript
-npm start         # Chạy bản đã compile
-npm test          # Chạy tests
-npm run typecheck # Type check không emit
-```
+## Yêu cầu
 
-### Testing
-
-```bash
-# Chạy unit tests
-npm test
-
-# Test indexing thủ công
-CHROMADB_URL=http://localhost:8000 npx tsx test-indexing.ts
-```
-
-## So sánh: Grep vs Semantic Search
-
-| Khía cạnh | Grep | Semantic Search |
-|-----------|------|-----------------|
-| Query | Match exact text | Ngôn ngữ tự nhiên |
-| "authentication" | Chỉ tìm "authentication" | Tìm login, auth, credentials, v.v. |
-| Hiểu context | Không | Có |
-| Tìm từ đồng nghĩa | Không | Có |
-| Tốc độ | Rất nhanh | Nhanh (sau khi index) |
-| Setup | Không cần | Cần indexing |
+- Node.js >= 20.0.0
+- ~500MB dung lượng đĩa cho embedding model (tải xuống lần chạy đầu tiên)
 
 ## Chi tiết kỹ thuật
 
@@ -514,6 +419,15 @@ CHROMADB_URL=http://localhost:8000 npx tsx test-indexing.ts
 | Vector Database | ChromaDB |
 | Code Parser | Tree-sitter |
 | MCP SDK | `@modelcontextprotocol/sdk` |
+
+## Development
+
+```bash
+npm install           # Cài dependencies
+npm run dev           # Chạy với tsx (không cần build)
+npm run build         # Compile TypeScript
+npm test              # Chạy tests
+```
 
 ## License
 

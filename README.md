@@ -3,7 +3,21 @@
 [![npm version](https://img.shields.io/npm/v/codebaxing.svg)](https://www.npmjs.com/package/codebaxing)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+**[English](README.md)** | [Tiếng Việt](README.vi.md)
+
 MCP server for **semantic code search**. Index your codebase and search using natural language queries.
+
+## Table of Contents
+
+- [The Idea](#the-idea)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+  - [Via AI Agents (MCP)](#via-ai-agents-mcp)
+  - [Via CLI (Terminal)](#via-cli-terminal)
+- [Installation](#installation)
+- [How It Works](#how-it-works)
+- [Configuration](#configuration)
+- [Supported Languages](#supported-languages)
 
 ## The Idea
 
@@ -11,7 +25,6 @@ Traditional code search (grep, ripgrep) matches exact text. But developers think
 
 - *"Where is the authentication logic?"* - not `grep "authentication"`
 - *"Find database connection code"* - not `grep "database"`
-- *"How does error handling work?"* - not `grep "error"`
 
 **Codebaxing** bridges this gap using **semantic search**:
 
@@ -22,238 +35,173 @@ Finds: login(), validateCredentials(), checkPassword(), authMiddleware()
        (even if they don't contain the word "authentication")
 ```
 
-## How It Works
+## Quick Start
 
-### Architecture Overview
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         INDEXING                                │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   Source Files (.py, .ts, .js, .go, .rs, ...)                  │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│   │ Tree-sitter  │───▶│   Symbols    │───▶│  Embedding   │     │
-│   │   Parser     │    │  Extraction  │    │    Model     │     │
-│   └──────────────┘    └──────────────┘    └──────────────┘     │
-│         │                    │                    │             │
-│    Parse AST            Functions,          Text → Vector       │
-│                        Classes, etc.        (384 dimensions)    │
-│                                                  │              │
-│                                                  ▼              │
-│                                          ┌──────────────┐      │
-│                                          │   ChromaDB   │      │
-│                                          │  (vectors)   │      │
-│                                          └──────────────┘      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                          SEARCH                                 │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   "find auth code"                                              │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐         ┌──────────────┐                    │
-│   │  Embedding   │────────▶│   ChromaDB   │                    │
-│   │    Model     │  query  │    Query     │                    │
-│   └──────────────┘  vector └──────────────┘                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Cosine Similarity                    │
-│                                   │                             │
-│                                   ▼                             │
-│                            Top-k Results                        │
-│                       (login.py, auth.ts, ...)                  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Step-by-Step Process
-
-#### 1. Parsing (Tree-sitter)
-
-Tree-sitter parses source code into an Abstract Syntax Tree (AST), extracting meaningful symbols:
-
-```python
-# Input: auth.py
-def login(username, password):
-    """Authenticate user credentials"""
-    if validate(username, password):
-        return create_session(username)
-    raise AuthError("Invalid credentials")
-```
-
-```
-# Output: Symbol
-{
-  name: "login",
-  type: "function",
-  signature: "def login(username, password)",
-  code: "def login(username, password):...",
-  filepath: "auth.py",
-  lineStart: 1,
-  lineEnd: 6
-}
-```
-
-#### 2. Embedding (all-MiniLM-L6-v2)
-
-Each code chunk is converted to a 384-dimensional vector using a neural network:
-
-```
-"def login(username, password): authenticate user..."
-                    ↓
-    Embedding Model (runs locally, ONNX)
-                    ↓
-    [0.12, -0.34, 0.56, 0.08, ..., -0.22]  (384 numbers)
-```
-
-The model understands semantic relationships:
-- `"authentication"` ≈ `"login"` ≈ `"credentials"` (vectors are close)
-- `"database"` ≈ `"query"` ≈ `"SQL"` (vectors are close)
-- `"authentication"` ≠ `"database"` (vectors are far apart)
-
-#### 3. Storage (ChromaDB)
-
-Vectors are stored in ChromaDB, a vector database optimized for similarity search:
-
-```
-ChromaDB Collection:
-┌─────────────────────────────────────────────────────┐
-│ ID          │ Vector (384d)      │ Metadata         │
-├─────────────────────────────────────────────────────┤
-│ chunk_001   │ [0.12, -0.34, ...] │ {file: auth.py}  │
-│ chunk_002   │ [0.45, 0.23, ...]  │ {file: db.py}    │
-│ chunk_003   │ [-0.11, 0.67, ...] │ {file: api.ts}   │
-│ ...         │ ...                │ ...              │
-└─────────────────────────────────────────────────────┘
-```
-
-#### 4. Search (Cosine Similarity)
-
-When you search, your query is embedded and compared against all stored vectors:
-
-```
-Query: "user authentication"
-              ↓
-Query Vector: [0.15, -0.31, 0.52, ...]
-              ↓
-Compare with all vectors using cosine similarity:
-  - chunk_001 (login): similarity = 0.89  ← HIGH
-  - chunk_002 (db):    similarity = 0.23  ← LOW
-  - chunk_003 (auth):  similarity = 0.85  ← HIGH
-              ↓
-Return top-k most similar chunks
-```
-
-### Why Semantic Search Works
-
-The embedding model was trained on millions of text pairs, learning that:
-
-| Concept A | ≈ Similar To | Distance |
-|-----------|--------------|----------|
-| authentication | login, credentials, auth, signin | Close |
-| database | query, SQL, connection, ORM | Close |
-| error | exception, failure, catch, throw | Close |
-| parse | tokenize, lexer, AST, syntax | Close |
-
-This allows finding code by **meaning**, not just keywords.
-
-## Features
-
-- **Semantic Code Search**: Find code by describing what you're looking for
-- **24+ Languages**: Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, and more
-- **Memory Layer**: Store and recall project context across sessions
-- **Incremental Indexing**: Only re-index changed files
-- **100% Local**: No API calls, no cloud, works offline
-- **GPU Acceleration**: Optional WebGPU/CUDA support
-
-## Requirements
-
-- Node.js >= 20.0.0
-- ~500MB disk space for embedding model (downloaded on first run)
-
-## Installation
-
-### Quick Install (Recommended)
+### 1. Install to your AI editor
 
 ```bash
-# Install to Claude Desktop
-npx codebaxing install
-
-# Install to Cursor
-npx codebaxing install --cursor
-
-# Install to Windsurf
-npx codebaxing install --windsurf
-
-# Install to all supported editors
-npx codebaxing install --all
+npx codebaxing install              # Claude Desktop
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf
+npx codebaxing install --all        # All editors
 ```
 
-Then restart your editor. Done!
+### 2. Restart your editor
 
-### Uninstall
+### 3. Start using
 
-```bash
-npx codebaxing uninstall        # Remove from Claude Desktop
-npx codebaxing uninstall --all  # Remove from all editors
+In Claude Desktop (or Cursor, Windsurf...):
+
+```
+You: Index my project at /path/to/myproject
+Claude: [calls index tool]
+
+You: Find the authentication logic
+Claude: [calls search tool, returns relevant code]
 ```
 
-### CLI Commands (Direct Usage)
+## Usage
 
-You can also use Codebaxing directly from terminal without AI agents:
+### Via AI Agents (MCP)
+
+After installing to your AI editor, you interact through natural conversation:
+
+#### Step 1: Index your codebase (Required first)
+
+```
+You: Index the codebase at /Users/me/projects/myapp
+```
+
+Claude will call `index(path="/Users/me/projects/myapp")` and show progress.
+
+> **Note:** First run downloads the embedding model (~90MB), takes 1-2 minutes.
+
+#### Step 2: Search for code
+
+```
+You: Find code that handles user authentication
+You: Where is the database connection logic?
+You: Show me error handling patterns
+```
+
+#### Step 3: Use memory (optional)
+
+```
+You: Remember that we're using PostgreSQL with Prisma ORM
+You: What decisions have we made about the database?
+```
+
+#### MCP Tools Reference
+
+| Tool | Description | Example |
+|------|-------------|---------|
+| `index` | Index a codebase (**required first**) | `index(path="/project")` |
+| `search` | Semantic code search | `search(question="auth middleware")` |
+| `stats` | Index statistics | `stats()` |
+| `languages` | Supported extensions | `languages()` |
+| `remember` | Store memory | `remember(content="Using Redis", memory_type="decision")` |
+| `recall` | Retrieve memories | `recall(query="database")` |
+| `forget` | Delete memories | `forget(memory_type="note")` |
+| `memory-stats` | Memory statistics | `memory-stats()` |
+
+### Via CLI (Terminal)
+
+You can use Codebaxing directly from terminal without AI agents:
+
+#### Step 1: Index your codebase (Required first)
 
 ```bash
-# Index a codebase
 npx codebaxing index /path/to/project
+```
 
-# Search for code
+Output:
+```
+🔧 Codebaxing - Index Codebase
+
+📁 Path: /path/to/project
+
+================================================================================
+INDEXING CODEBASE
+================================================================================
+Found 47 files
+Parsed 645 symbols from 47 files
+Generating embeddings for 645 chunks...
+Model loaded: Xenova/all-MiniLM-L6-v2 (384 dims, CPU)
+
+================================================================================
+INDEXING COMPLETE
+================================================================================
+Files parsed:      47
+Symbols extracted: 645
+Chunks created:    645
+Time elapsed:      21.9s
+```
+
+#### Step 2: Search for code
+
+```bash
 npx codebaxing search "authentication middleware"
 npx codebaxing search "database connection" --path ./src --limit 10
+```
 
-# Show index statistics
+Output:
+```
+🔧 Codebaxing - Search
+
+📁 Path:  /path/to/project
+🔍 Query: "authentication middleware"
+📊 Limit: 5
+
+────────────────────────────────────────────────────────────
+Results:
+
+1. src/middleware/auth.ts:15 - authMiddleware()
+2. src/services/auth.ts:42 - validateToken()
+3. src/routes/login.ts:8 - loginHandler()
+
+────────────────────────────────────────────────────────────
+```
+
+#### Step 3: Check statistics
+
+```bash
 npx codebaxing stats /path/to/project
 ```
 
-**Note:** For persistent storage, run ChromaDB first:
+#### CLI Commands Reference
+
+| Command | Description |
+|---------|-------------|
+| `npx codebaxing install [--editor]` | Install MCP server to AI editor |
+| `npx codebaxing uninstall [--editor]` | Uninstall MCP server |
+| `npx codebaxing index <path>` | Index a codebase |
+| `npx codebaxing search <query> [options]` | Search indexed codebase |
+| `npx codebaxing stats [path]` | Show index statistics |
+| `npx codebaxing --help` | Show help |
+
+**Search options:**
+- `--path, -p <path>` - Codebase path (default: current directory)
+- `--limit, -n <number>` - Number of results (default: 5)
+
+## Installation
+
+### Option 1: Quick Install (Recommended)
+
 ```bash
-docker run -d -p 8000:8000 chromadb/chroma
-export CHROMADB_URL=http://localhost:8000
+npx codebaxing install              # Claude Desktop (default)
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf (Codeium)
+npx codebaxing install --zed        # Zed
+npx codebaxing install --all        # All supported editors
 ```
 
-### Manual Installation
+Then restart your editor.
 
-If you prefer manual configuration, see [Manual Configuration](#configure-claude-desktop) below.
+### Option 2: Manual Configuration
 
-### (Optional) Persistent Storage
+#### Claude Desktop
 
-By default, the index is stored in memory and lost when the server restarts.
-
-For persistent storage, run ChromaDB:
-
-```bash
-# Using Docker (recommended)
-docker run -d -p 8000:8000 chromadb/chroma
-
-# Set environment variable
-export CHROMADB_URL=http://localhost:8000
-```
-
-### Manual Configuration
-
-#### Configure Claude Desktop
-
-Add to your Claude Desktop config file:
-
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
-#### Via npx (no install needed):
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -265,61 +213,10 @@ Add to your Claude Desktop config file:
   }
 }
 ```
-
-#### Via global install:
-
-```bash
-npm install -g codebaxing
-```
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "codebaxing"
-    }
-  }
-}
-```
-
-#### With persistent storage (ChromaDB):
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-#### From source (development):
-
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "node",
-      "args": ["/path/to/codebaxing/dist/mcp/server.js"]
-    }
-  }
-}
-```
-
-### Restart Claude Desktop
-
-The Codebaxing tools will now be available in Claude.
-
-### Other AI Agents Integration
 
 #### Cursor
 
-Add to Cursor settings (`~/.cursor/mcp.json`):
+Add to `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -332,9 +229,9 @@ Add to Cursor settings (`~/.cursor/mcp.json`):
 }
 ```
 
-#### Windsurf (Codeium)
+#### Windsurf
 
-Add to Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
+Add to `~/.codeium/windsurf/mcp_config.json`:
 
 ```json
 {
@@ -342,6 +239,23 @@ Add to Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
     "codebaxing": {
       "command": "npx",
       "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### Zed
+
+Add to `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "codebaxing": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "codebaxing"]
+      }
     }
   }
 }
@@ -349,7 +263,7 @@ Add to Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
 
 #### VS Code + Continue
 
-Add to Continue config (`~/.continue/config.json`):
+Add to `~/.continue/config.json`:
 
 ```json
 {
@@ -367,79 +281,67 @@ Add to Continue config (`~/.continue/config.json`):
 }
 ```
 
-#### Zed
-
-Add to Zed settings (`~/.config/zed/settings.json`):
-
-```json
-{
-  "context_servers": {
-    "codebaxing": {
-      "command": {
-        "path": "npx",
-        "args": ["-y", "codebaxing"]
-      }
-    }
-  }
-}
-```
-
-#### Generic MCP Client
-
-For any MCP-compatible client, use stdio transport:
+### Uninstall
 
 ```bash
-# Command
-npx -y codebaxing
-
-# Or if installed globally
-codebaxing
+npx codebaxing uninstall            # Claude Desktop
+npx codebaxing uninstall --all      # All editors
 ```
 
-## Usage
+## How It Works
 
-### MCP Tools
+### Architecture
 
-| Tool | Description |
-|------|-------------|
-| `index` | Index a codebase. Modes: `auto` (incremental), `full`, `load-only` |
-| `search` | Semantic search. Returns ranked code chunks |
-| `stats` | Index statistics (files, symbols, chunks) |
-| `languages` | List supported file extensions |
-| `remember` | Store memories (conversation, status, decision, preference, doc, note) |
-| `recall` | Semantic search over memories |
-| `forget` | Delete memories by ID, type, tags, or age |
-| `memory-stats` | Memory statistics by type |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         INDEXING                                │
+├─────────────────────────────────────────────────────────────────┤
+│   Source Files (.py, .ts, .js, .go, .rs, ...)                  │
+│         │                                                       │
+│         ▼                                                       │
+│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
+│   │ Tree-sitter  │───▶│   Symbols    │───▶│  Embedding   │     │
+│   │   Parser     │    │  Extraction  │    │    Model     │     │
+│   └──────────────┘    └──────────────┘    └──────────────┘     │
+│         │                    │                    │             │
+│    Parse AST            Functions,          Text → Vector       │
+│                        Classes, etc.        (384 dimensions)    │
+│                                                  │              │
+│                                                  ▼              │
+│                                          ┌──────────────┐      │
+│                                          │   ChromaDB   │      │
+│                                          │  (vectors)   │      │
+│                                          └──────────────┘      │
+└─────────────────────────────────────────────────────────────────┘
 
-### Example Workflow
+┌─────────────────────────────────────────────────────────────────┐
+│                          SEARCH                                 │
+├─────────────────────────────────────────────────────────────────┤
+│   "find auth code"                                              │
+│         │                                                       │
+│         ▼                                                       │
+│   ┌──────────────┐         ┌──────────────┐                    │
+│   │  Embedding   │────────▶│   ChromaDB   │                    │
+│   │    Model     │  query  │    Query     │                    │
+│   └──────────────┘  vector └──────────────┘                    │
+│                                   │                             │
+│                                   ▼                             │
+│                            Cosine Similarity                    │
+│                                   │                             │
+│                                   ▼                             │
+│                            Top-k Results                        │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-1. **Index your codebase:**
-   ```
-   index(path="/path/to/your/project")
-   ```
+### Why Semantic Search Works
 
-2. **Search for code:**
-   ```
-   search(question="authentication middleware")
-   search(question="database connection", language="typescript")
-   search(question="error handling", symbol_type="function")
-   ```
+The embedding model understands that:
 
-3. **Store context:**
-   ```
-   remember(content="Using PostgreSQL with Prisma ORM", memory_type="decision")
-   remember(content="Auth uses JWT tokens", memory_type="doc", tags=["auth", "security"])
-   ```
-
-4. **Recall context:**
-   ```
-   recall(query="database setup")
-   recall(query="authentication", memory_type="decision")
-   ```
-
-## Supported Languages
-
-Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, PHP, Scala, Swift, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, CSS, HTML, Vue, JSON, YAML, TOML, Makefile
+| Query | Finds (even without exact match) |
+|-------|----------------------------------|
+| "authentication" | login, credentials, auth, signin, validateUser |
+| "database" | query, SQL, connection, ORM, repository |
+| "error handling" | try/catch, exception, throw, ErrorBoundary |
 
 ## Configuration
 
@@ -448,62 +350,65 @@ Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CHROMADB_URL` | ChromaDB server URL for persistent storage | (in-memory) |
-| `CODEBAXING_DEVICE` | Compute device for embeddings | `cpu` |
+| `CODEBAXING_DEVICE` | Compute device: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
+
+### Persistent Storage
+
+By default, the index is stored in memory and lost when the server restarts.
+
+For persistent storage:
+
+```bash
+# Start ChromaDB
+docker run -d -p 8000:8000 chromadb/chroma
+
+# Set environment variable
+export CHROMADB_URL=http://localhost:8000
+```
+
+Or in MCP config:
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"],
+      "env": {
+        "CHROMADB_URL": "http://localhost:8000"
+      }
+    }
+  }
+}
+```
 
 ### GPU Acceleration
 
-Enable GPU for faster embedding generation:
-
 ```bash
-# WebGPU (experimental, uses Metal on macOS)
-export CODEBAXING_DEVICE=webgpu
-
-# Auto-detect best device
-export CODEBAXING_DEVICE=auto
-
-# NVIDIA GPU (Linux/Windows only, requires CUDA)
-export CODEBAXING_DEVICE=cuda
+export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
+export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
+export CODEBAXING_DEVICE=auto    # Auto-detect
 ```
 
-Default is `cpu` which works everywhere.
+**Note:** macOS does not support CUDA. Use `webgpu` for GPU acceleration on Mac.
 
-**Note:** macOS does not support CUDA (no NVIDIA drivers). Use `webgpu` for GPU acceleration on Mac.
+## Supported Languages
 
-### Storage
+Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, PHP, Scala, Swift, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, CSS, HTML, Vue, JSON, YAML, TOML, Makefile
 
-Metadata is stored in `.codebaxing/` folder within your project:
-- `metadata.json` - Index metadata and file timestamps
+## Features
 
-## Development
+- **Semantic Code Search**: Find code by describing what you're looking for
+- **24+ Languages**: Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, and more
+- **Memory Layer**: Store and recall project context across sessions
+- **Incremental Indexing**: Only re-index changed files
+- **100% Local**: No API calls, no cloud, works offline
+- **GPU Acceleration**: Optional WebGPU/CUDA support
 
-```bash
-npm run dev       # Run with tsx (no build needed)
-npm run build     # Compile TypeScript
-npm start         # Run compiled version
-npm test          # Run tests
-npm run typecheck # Type check without emitting
-```
+## Requirements
 
-### Testing
-
-```bash
-# Run unit tests
-npm test
-
-# Test indexing manually
-CHROMADB_URL=http://localhost:8000 npx tsx test-indexing.ts
-```
-
-## Comparison: Grep vs Semantic Search
-
-| Aspect | Grep | Semantic Search |
-|--------|------|-----------------|
-| Query | Exact text match | Natural language |
-| "authentication" | Only finds "authentication" | Finds login, auth, credentials, etc. |
-| Understands context | No | Yes |
-| Finds synonyms | No | Yes |
-| Speed | Very fast | Fast (after indexing) |
-| Setup | None | Requires indexing |
+- Node.js >= 20.0.0
+- ~500MB disk space for embedding model (downloaded on first run)
 
 ## Technical Details
 
@@ -514,6 +419,15 @@ CHROMADB_URL=http://localhost:8000 npx tsx test-indexing.ts
 | Vector Database | ChromaDB |
 | Code Parser | Tree-sitter |
 | MCP SDK | `@modelcontextprotocol/sdk` |
+
+## Development
+
+```bash
+npm install           # Install dependencies
+npm run dev           # Run with tsx (no build needed)
+npm run build         # Compile TypeScript
+npm test              # Run tests
+```
 
 ## License
 
