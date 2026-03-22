@@ -281,6 +281,87 @@ npm install -g codebaxing
 
 Các tool Codebaxing sẽ có sẵn trong Claude.
 
+### Tích hợp với AI Agents khác
+
+#### Cursor
+
+Thêm vào Cursor settings (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### Windsurf (Codeium)
+
+Thêm vào Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### VS Code + Continue
+
+Thêm vào Continue config (`~/.continue/config.json`):
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "codebaxing"]
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Zed
+
+Thêm vào Zed settings (`~/.config/zed/settings.json`):
+
+```json
+{
+  "context_servers": {
+    "codebaxing": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "codebaxing"]
+      }
+    }
+  }
+}
+```
+
+#### MCP Client khác
+
+Với bất kỳ MCP client nào, dùng stdio transport:
+
+```bash
+# Command
+npx -y codebaxing
+
+# Hoặc nếu đã install global
+codebaxing
+```
+
 ## Sử dụng
 
 ### MCP Tools

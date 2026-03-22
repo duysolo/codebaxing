@@ -281,6 +281,87 @@ npm install -g codebaxing
 
 The Codebaxing tools will now be available in Claude.
 
+### Other AI Agents Integration
+
+#### Cursor
+
+Add to Cursor settings (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### Windsurf (Codeium)
+
+Add to Windsurf MCP config (`~/.codeium/windsurf/mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "codebaxing": {
+      "command": "npx",
+      "args": ["-y", "codebaxing"]
+    }
+  }
+}
+```
+
+#### VS Code + Continue
+
+Add to Continue config (`~/.continue/config.json`):
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "npx",
+          "args": ["-y", "codebaxing"]
+        }
+      }
+    ]
+  }
+}
+```
+
+#### Zed
+
+Add to Zed settings (`~/.config/zed/settings.json`):
+
+```json
+{
+  "context_servers": {
+    "codebaxing": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "codebaxing"]
+      }
+    }
+  }
+}
+```
+
+#### Generic MCP Client
+
+For any MCP-compatible client, use stdio transport:
+
+```bash
+# Command
+npx -y codebaxing
+
+# Or if installed globally
+codebaxing
+```
+
 ## Usage
 
 ### MCP Tools
