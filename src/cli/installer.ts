@@ -162,6 +162,19 @@ function uninstallFromEditor(editor: EditorConfig): boolean {
 
 // ─── Index Command ───────────────────────────────────────────────────────────
 
+function getCodebaxingPaths(codebasePath: string) {
+  const codebaxingDir = path.join(codebasePath, '.codebaxing');
+  return {
+    codebaxingDir,
+    chromaPath: path.join(codebaxingDir, 'chromadb'),
+    metadataPath: path.join(codebaxingDir, 'metadata.json'),
+  };
+}
+
+function hasValidIndex(paths: ReturnType<typeof getCodebaxingPaths>): boolean {
+  return fs.existsSync(paths.metadataPath);
+}
+
 async function runIndex(codebasePath: string): Promise<void> {
   const absolutePath = path.resolve(codebasePath);
 
@@ -179,14 +192,52 @@ async function runIndex(codebasePath: string): Promise<void> {
   // Dynamic import to avoid loading heavy dependencies upfront
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
 
+  const paths = getCodebaxingPaths(absolutePath);
+  const hasExisting = hasValidIndex(paths);
+
   try {
+    // Ensure .codebaxing directory exists
+    fs.mkdirSync(paths.codebaxingDir, { recursive: true });
+
     const retriever = new SourceRetriever({
       codebasePath: absolutePath,
       embeddingModel: 'all-MiniLM-L6-v2',
       verbose: true,
+      persistPath: paths.chromaPath,
     });
 
-    await retriever.indexCodebase();
+    if (hasExisting) {
+      // Incremental reindex - only process changed files
+      console.log('📋 Existing index found. Running incremental update...\n');
+
+      const loaded = await retriever.loadExistingIndex();
+      if (!loaded) {
+        console.log('⚠️  Failed to load existing index. Running full index...\n');
+        await retriever.indexCodebase();
+      } else {
+        retriever.loadMetadata(paths.metadataPath);
+        const result = await retriever.incrementalReindex();
+
+        console.log('\n📊 Incremental Update Results:');
+        console.log(`   Files added:    ${result.filesAdded}`);
+        console.log(`   Files modified: ${result.filesModified}`);
+        console.log(`   Files deleted:  ${result.filesDeleted}`);
+        console.log(`   Chunks added:   ${result.chunksAdded}`);
+        console.log(`   Chunks removed: ${result.chunksRemoved}`);
+        console.log(`   Time:           ${result.timeSeconds}s\n`);
+
+        if (result.filesAdded === 0 && result.filesModified === 0 && result.filesDeleted === 0) {
+          console.log('✅ Index is up to date. No changes needed.\n');
+        }
+        return;
+      }
+    } else {
+      // Full index
+      console.log('📋 No existing index. Running full index...\n');
+      await retriever.indexCodebase();
+    }
+
+    retriever.saveMetadata(paths.metadataPath);
 
     const stats = retriever.getStats();
     console.log('\n📊 Index Statistics:');
@@ -269,20 +320,26 @@ async function runSearch(query: string, options: { path?: string; limit?: number
   await checkChromaDBConnection();
 
   const { SourceRetriever } = await import('../indexing/source-retriever.js');
+  const paths = getCodebaxingPaths(absolutePath);
 
   try {
     const retriever = new SourceRetriever({
       codebasePath: absolutePath,
       embeddingModel: 'all-MiniLM-L6-v2',
       verbose: false,
+      persistPath: paths.chromaPath,
     });
 
-    // Check if index exists, if not, index first
-    const stats = retriever.getStats();
-    if (stats.totalChunks === 0) {
-      console.log('⚠️  No index found. Indexing first...\n');
-      await retriever.indexCodebase();
-      console.log('');
+    // Check if index exists
+    if (!hasValidIndex(paths)) {
+      console.log('❌ No index found. Run "npx codebaxing@latest index <path>" first.\n');
+      process.exit(1);
+    }
+
+    const loaded = await retriever.loadExistingIndex();
+    if (!loaded) {
+      console.log('❌ Failed to load index. Try re-indexing with "npx codebaxing@latest index <path>".\n');
+      process.exit(1);
     }
 
     const { sources } = await retriever.getSourcesForQuestion(query, { nResults: limit });
@@ -317,35 +374,34 @@ async function runStats(codebasePath?: string): Promise<void> {
   console.log('\n🔧 Codebaxing - Statistics\n');
   console.log(`📁 Path: ${absolutePath}\n`);
 
-  // Check ChromaDB connection first
-  await checkChromaDBConnection();
+  const paths = getCodebaxingPaths(absolutePath);
 
-  const { SourceRetriever } = await import('../indexing/source-retriever.js');
+  // Check if index exists (no need to connect to ChromaDB if metadata exists)
+  if (!hasValidIndex(paths)) {
+    console.log('❌ No index found. Run "npx codebaxing@latest index <path>" first.\n');
+    process.exit(1);
+  }
 
+  // Read stats from metadata file
   try {
-    const retriever = new SourceRetriever({
-      codebasePath: absolutePath,
-      embeddingModel: 'all-MiniLM-L6-v2',
-      verbose: false,
-    });
-
-    const stats = retriever.getStats();
+    const metadata = JSON.parse(fs.readFileSync(paths.metadataPath, 'utf-8'));
+    const stats = metadata.stats || {};
 
     console.log('📊 Index Statistics:');
-    console.log(`   Files:       ${stats.totalFiles}`);
-    console.log(`   Symbols:     ${stats.totalSymbols}`);
-    console.log(`   Chunks:      ${stats.totalChunks}`);
-    console.log(`   Parse Errors: ${stats.parseErrors}`);
+    console.log(`   Files:       ${stats.totalFiles || 0}`);
+    console.log(`   Symbols:     ${stats.totalSymbols || 0}`);
+    console.log(`   Chunks:      ${stats.totalChunks || 0}`);
+    console.log(`   Parse Errors: ${stats.parseErrors || 0}`);
     if (stats.indexingTime) {
       console.log(`   Index Time:  ${stats.indexingTime.toFixed(1)}s`);
     }
+    if (metadata.indexedAt) {
+      console.log(`   Indexed At:  ${metadata.indexedAt}`);
+    }
     console.log('');
   } catch (err) {
-    const message = (err as Error).message;
-    if (message.includes('chromadb') || message.includes('Failed to connect')) {
-      showChromaDBError();
-    }
-    throw err;
+    console.error(`❌ Failed to read index metadata: ${(err as Error).message}\n`);
+    process.exit(1);
   }
 }
 
