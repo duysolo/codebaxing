@@ -914,6 +914,7 @@ export class SourceRetriever {
     const storedMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
 
     // Scan current files (use relative paths as keys)
+    if (this.verbose) console.log('Scanning files for changes...');
     const extensionsSet = new Set(extensions);
     const allCurrentAbsPaths = discoverFiles(this.codebasePath, extensionsSet);
     const currentFiles: Record<string, number> = {};
@@ -938,6 +939,10 @@ export class SourceRetriever {
     const filesToReindex = new Set([...newFiles, ...modifiedFiles]);
     const filesToRemove = new Set([...deletedFiles, ...modifiedFiles]);
 
+    if (this.verbose) {
+      console.log(`Changes: ${newFiles.length} new, ${modifiedFiles.length} modified, ${deletedFiles.length} deleted`);
+    }
+
     emit('changes_detected', {
       new: newFiles.length,
       modified: modifiedFiles.length,
@@ -947,19 +952,30 @@ export class SourceRetriever {
     let chunksRemoved = 0;
     let chunksAdded = 0;
 
-    // Remove stale chunks (filepath in ChromaDB is relative)
+    // Remove stale chunks in batch (not one-by-one)
     if (filesToRemove.size > 0 && this.collection) {
-      for (const relPath of filesToRemove) {
-        try {
-          await this.collection.delete({ where: { filepath: relPath } });
-          chunksRemoved++;
-        } catch { /* ignore */ }
+      if (this.verbose) console.log(`Removing stale chunks for ${filesToRemove.size} files...`);
+      const filesToRemoveArr = [...filesToRemove];
+      const deleteBatchSize = 50;
+      for (let i = 0; i < filesToRemoveArr.length; i += deleteBatchSize) {
+        const batch = filesToRemoveArr.slice(i, i + deleteBatchSize);
+        const deletePromises = batch.map(relPath =>
+          this.collection!.delete({ where: { filepath: relPath } }).catch(() => {})
+        );
+        await Promise.all(deletePromises);
+        chunksRemoved += batch.length;
+        if (this.verbose && filesToRemoveArr.length > 100) {
+          const pct = ((Math.min(i + deleteBatchSize, filesToRemoveArr.length) / filesToRemoveArr.length) * 100).toFixed(0);
+          process.stdout.write(`\r  Removing: ${pct}%`);
+        }
       }
+      if (this.verbose && filesToRemoveArr.length > 100) process.stdout.write('\n');
     }
 
-    // Parse and index new/modified files
+    // Parse and index new/modified files (using workers if available)
     if (filesToReindex.size > 0) {
       emit('parsing_start', { total: filesToReindex.size });
+      if (this.verbose) console.log(`Parsing ${filesToReindex.size} files...`);
 
       const chunks: CodeChunk[] = [];
       for (const relPath of filesToReindex) {
@@ -975,12 +991,38 @@ export class SourceRetriever {
 
       if (chunks.length > 0 && this.collection) {
         emit('embedding_start', { total: chunks.length });
+        if (this.verbose) console.log(`Embedding ${chunks.length} chunks...`);
 
-        const batchSize = 50;
+        // Initialize worker pool if configured
+        const workerCount = getWorkerCount();
+        if (workerCount > 0 && !this.embeddingPool) {
+          try {
+            this.embeddingPool = getEmbeddingPool({ numWorkers: workerCount, modelName: this.embeddingModel });
+            await this.embeddingPool.initialize();
+          } catch (e) {
+            console.error(`[codebaxing] Worker pool failed: ${(e as Error).message}`);
+            this.embeddingPool = null;
+          }
+        }
+
+        const embedFn = this.embeddingPool
+          ? (t: string[]) => this.embeddingPool!.embedBatch(t)
+          : (t: string[]) => this.embeddingService.embedBatch(t);
+
+        const batchSize = 100;
+        const embedBatchSize = getEmbedBatchSize();
         for (let i = 0; i < chunks.length; i += batchSize) {
           const batch = chunks.slice(i, i + batchSize);
           const texts = batch.map(c => c.text);
-          const embeddings = await this.embeddingService.embedBatch(texts);
+
+          // Embed sub-batches in parallel across workers
+          const subBatchPromises: Promise<number[][]>[] = [];
+          for (let j = 0; j < texts.length; j += embedBatchSize) {
+            const subTexts = texts.slice(j, j + embedBatchSize);
+            subBatchPromises.push(embedFn(subTexts).catch(() => subTexts.map(() => new Array(384).fill(0))));
+          }
+          const subResults = await Promise.all(subBatchPromises);
+          const embeddings = subResults.flat();
 
           if (embeddings.length > 0) {
             // Deduplicate IDs
@@ -1001,8 +1043,20 @@ export class SourceRetriever {
           }
 
           chunksAdded += batch.length;
+          if (this.verbose) {
+            const pct = ((Math.min(i + batchSize, chunks.length) / chunks.length) * 100).toFixed(0);
+            console.log(`  Embedded: ${Math.min(i + batchSize, chunks.length)}/${chunks.length} (${pct}%)`);
+          }
+        }
+
+        // Terminate worker pool
+        if (this.embeddingPool) {
+          await this.embeddingPool.terminate();
+          this.embeddingPool = null;
         }
       }
+    } else {
+      if (this.verbose) console.log('No changes detected.');
     }
 
     // Update metadata
