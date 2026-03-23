@@ -142,6 +142,27 @@ export class EmbeddingWorkerPool {
       try {
         this.workers = await Promise.all(workerPromises);
         this.initialized = true;
+
+        // Warm up: send a tiny embed to each worker so they load the model now
+        // This way model loading happens during init (with visible progress)
+        // instead of silently during the first batch
+        console.log(`[codebaxing] ${this.numWorkers} workers loading models...`);
+        const warmupPromises = this.workers.map((_, i) => {
+          return new Promise<void>((resolve, reject) => {
+            const taskId = this.nextTaskId++;
+            this.pendingTasks.set(taskId, {
+              resolve: () => resolve(),
+              reject: (err) => reject(err),
+            });
+            this.workerBusy[i] = true;
+            this.workers[i].send({ type: 'embed', texts: ['warmup'], id: taskId });
+          }).finally(() => {
+            this.workerBusy[this.workers.indexOf(this.workers[i])] = false;
+          });
+        });
+        await Promise.all(warmupPromises);
+        // Reset busy state
+        this.workerBusy.fill(false);
         console.log(`[codebaxing] ${this.numWorkers} workers ready`);
       } catch (e) {
         // Clean up any workers that did start
