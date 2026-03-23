@@ -1051,9 +1051,29 @@ export class SourceRetriever {
           }
 
           chunksAdded += batch.length;
+
+          // Save metadata progressively so interrupted runs can skip already-indexed files
+          // Track which files have been successfully embedded by updating their mtimes
+          const batchFilepaths = new Set(batch.map(c => c.filepath));
+          const progressMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
+          for (const fp of batchFilepaths) {
+            if (currentFiles[fp] !== undefined) {
+              progressMtimes[fp] = currentFiles[fp];
+            }
+          }
+          this.metadata.fileMtimes = progressMtimes;
+
+          const batchNum = Math.floor(i / batchSize) + 1;
+          const totalBatches = Math.ceil(chunks.length / batchSize);
+          const saveInterval = getMetadataSaveInterval();
+          if (this.persistPath && (batchNum % saveInterval === 0 || batchNum === totalBatches)) {
+            const metadataPath = path.join(path.dirname(this.persistPath), 'metadata.json');
+            this.saveMetadata(metadataPath);
+          }
+
           if (this.verbose) {
             const pct = ((Math.min(i + batchSize, chunks.length) / chunks.length) * 100).toFixed(0);
-            console.log(`  Embedded: ${Math.min(i + batchSize, chunks.length)}/${chunks.length} (${pct}%)`);
+            console.log(`  Embedded: ${Math.min(i + batchSize, chunks.length).toLocaleString()}/${chunks.length.toLocaleString()} (${pct}%)`);
           }
         }
 
