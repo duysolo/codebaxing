@@ -109,14 +109,15 @@ function getEmbedBatchSize(): number {
 }
 
 // Parallel batches: how many batches to process concurrently
-// Higher = faster but more memory. Default 3 for balance.
+// Should match or exceed worker count so no worker sits idle.
 function getParallelBatches(): number {
   const envVal = process.env.CODEBAXING_PARALLEL_BATCHES;
   if (envVal) {
     const val = parseInt(envVal, 10);
     if (!isNaN(val) && val > 0 && val <= 10) return val;
   }
-  return 3; // Default 3 concurrent batches
+  // Match worker count (default 4), minimum 3
+  return Math.max(3, getWorkerCount());
 }
 
 // How often to save metadata (every N batches). Default 10.
@@ -628,26 +629,26 @@ export class SourceRetriever {
         return { chunks: [], embeddings: [], symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length, batchFiles };
       }
 
-      // Embed in sub-batches (use worker pool if available for true parallelism)
+      // Embed sub-batches in parallel — pool distributes across workers
       const allEmbeddings: number[][] = [];
       const embedFn = this.embeddingPool
-        ? (texts: string[]) => this.embeddingPool!.embedBatch(texts)
-        : (texts: string[]) => this.embeddingService.embedBatch(texts);
+        ? (t: string[]) => this.embeddingPool!.embedBatch(t)
+        : (t: string[]) => this.embeddingService.embedBatch(t);
 
+      const subBatchPromises: Promise<number[][]>[] = [];
       for (let i = 0; i < batchChunks.length; i += embedBatchSize) {
-        const subBatch = batchChunks.slice(i, i + embedBatchSize);
-        const texts = subBatch.map(c => c.text);
-        try {
-          const embeddings = await embedFn(texts);
-          allEmbeddings.push(...embeddings);
-        } catch (e) {
-          // Let model loading errors propagate — don't silently produce zero-vectors
-          const msg = (e as Error).message ?? '';
-          if (msg.includes('Failed to load embedding model')) throw e;
-          for (let j = 0; j < subBatch.length; j++) {
-            allEmbeddings.push(new Array(384).fill(0));
-          }
-        }
+        const subTexts = batchChunks.slice(i, i + embedBatchSize).map(c => c.text);
+        subBatchPromises.push(
+          embedFn(subTexts).catch(e => {
+            const msg = (e as Error).message ?? '';
+            if (msg.includes('Failed to load embedding model')) throw e;
+            return subTexts.map(() => new Array(384).fill(0));
+          })
+        );
+      }
+      const subResults = await Promise.all(subBatchPromises);
+      for (const sub of subResults) {
+        allEmbeddings.push(...sub);
       }
 
       return { chunks: batchChunks, embeddings: allEmbeddings, symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length, batchFiles };
