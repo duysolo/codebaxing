@@ -61,14 +61,20 @@ src/
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CHROMADB_URL` | ChromaDB server URL (**required**) | - |
-| `CODEBAXING_DEVICE` | Compute device: `cpu`, `cuda` | `cpu` |
-| `CODEBAXING_DTYPE` | Model quantization: `fp32`, `fp16`, `q8`, `q4` | `q8` |
-| `CODEBAXING_WORKERS` | Worker threads for parallel embedding (0=off, 1-8) | `2` |
+| `CODEBAXING_EMBEDDING_PROVIDER` | Embedding backend: `local`, `openai`, `voyage` | `local` |
+| `CODEBAXING_DEVICE` | Compute device (local only): `cpu`, `cuda` | `cpu` |
+| `CODEBAXING_DTYPE` | Model quantization (local only): `fp32`, `fp16`, `q8`, `q4` | `q8` |
+| `CODEBAXING_WORKERS` | Worker threads for parallel embedding (local only, 0=off) | `2` |
 | `CODEBAXING_FILES_PER_BATCH` | Files per batch | `100` |
 | `CODEBAXING_METADATA_SAVE_INTERVAL` | Save progress every N batches | `10` |
 | `CODEBAXING_MAX_FILE_SIZE` | Max file size in MB | `1` |
 | `CODEBAXING_MAX_CHUNKS` | Max chunks to index | `500000` |
 | `CODEBAXING_MODEL_CACHE` | Directory for embedding model cache | `~/.cache/codebaxing/models` |
+| `CODEBAXING_OPENAI_API_KEY` | OpenAI API key (or use `OPENAI_API_KEY`) | - |
+| `CODEBAXING_VOYAGE_API_KEY` | Voyage API key (or use `VOYAGE_API_KEY`) | - |
+| `CODEBAXING_EMBEDDING_MODEL` | Override embedding model name | per-provider default |
+| `CODEBAXING_EMBEDDING_DIMENSIONS` | Override embedding dimensions | per-provider default |
+| `CODEBAXING_EMBEDDING_BASE_URL` | Custom API endpoint for cloud providers | provider default |
 
 ### ChromaDB Setup (Required)
 ChromaDB server must be running. Start with Docker:
@@ -77,7 +83,23 @@ docker run -d -p 8000:8000 chromadb/chroma
 export CHROMADB_URL=http://localhost:8000
 ```
 
-### Performance Tuning
+### Cloud Embedding (Fastest)
+Use OpenAI or Voyage for ~10,000+ texts/sec (vs ~400 locally):
+```bash
+# OpenAI
+CODEBAXING_EMBEDDING_PROVIDER=openai OPENAI_API_KEY=sk-... npx codebaxing index /path
+
+# Voyage (code-optimized)
+CODEBAXING_EMBEDDING_PROVIDER=voyage VOYAGE_API_KEY=va-... npx codebaxing index /path
+```
+
+Provider defaults:
+- **OpenAI**: `text-embedding-3-small` (384 dims, matches local default)
+- **Voyage**: `voyage-code-3` (1024 dims, optimized for code search)
+
+Note: Switching providers requires full re-index (`mode=full`) due to dimension differences.
+
+### Performance Tuning (Local)
 - **Dtype** (default `q8`): Quantization level. `q8` is ~3x faster than `fp32` with negligible quality loss.
   Use `fp32` only if embedding quality issues are suspected.
 - **Workers** (default 2): Each worker loads its own ONNX model for true parallel embedding.
@@ -111,9 +133,9 @@ npm run typecheck         # Type check without emit
 
 ## Key Technical Details
 
-- **Embedding Model**: `Xenova/all-MiniLM-L6-v2` (384 dims, ONNX)
-- **Model Cache**: `~/.cache/codebaxing/models/` (~90MB, persists across npx runs)
-- **Parallel Embedding**: `worker_threads` pool (default 2 workers, each with own model)
+- **Embedding Model**: `Xenova/all-MiniLM-L6-v2` (384 dims, ONNX, local) or cloud APIs (OpenAI/Voyage)
+- **Model Cache**: `~/.cache/codebaxing/models/` (~90MB, persists across npx runs, local only)
+- **Parallel Embedding**: `child_process` pool (default 2 workers, local) or concurrent API calls (cloud)
 - **Vector DB**: ChromaDB (Node.js client requires server for persistence)
 - **Parser**: Tree-sitter with native Node.js bindings
 - **MCP SDK**: `@modelcontextprotocol/sdk`

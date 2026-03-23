@@ -11,7 +11,9 @@ import path from 'node:path';
 import { ChromaClient, type Collection } from 'chromadb';
 import { TreeSitterParser } from '../parsers/treesitter-parser.js';
 import { getLanguageForFile, getSupportedExtensions } from '../parsers/language-configs.js';
-import { EmbeddingService, getEmbeddingService, EMBEDDING_MODELS, DEFAULT_MODEL } from './embedding-service.js';
+import type { IEmbeddingService } from '../core/interfaces.js';
+import { EmbeddingService, EMBEDDING_MODELS, DEFAULT_MODEL } from './embedding-service.js';
+import { createEmbeddingService, getConfiguredProvider } from './embedding-factory.js';
 import { parallelParseFiles, type ProgressCallback } from './parallel-indexer.js';
 import { EmbeddingWorkerPool, getEmbeddingPool } from './embedding-pool.js';
 import type { Symbol } from '../core/models.js';
@@ -372,7 +374,7 @@ export class SourceRetriever {
   persistPath: string | undefined;
 
   private parser: TreeSitterParser;
-  private embeddingService: EmbeddingService;
+  private embeddingService: IEmbeddingService;
   private embeddingPool: EmbeddingWorkerPool | null = null;
   private chromaClient: ChromaClient;
   private collection: Collection | null = null;
@@ -394,7 +396,7 @@ export class SourceRetriever {
     verbose?: boolean;
     persistPath?: string;
     parser?: TreeSitterParser;
-    embeddingService?: EmbeddingService;
+    embeddingService?: IEmbeddingService;
   }) {
     this.codebasePath = options.codebasePath;
     this.embeddingModel = options.embeddingModel ?? 'all-MiniLM-L6-v2';
@@ -403,10 +405,10 @@ export class SourceRetriever {
     this.persistPath = options.persistPath;
 
     this.parser = options.parser ?? new TreeSitterParser();
-    this.embeddingService = options.embeddingService ?? getEmbeddingService(
-      this.embeddingModel,
-      { showProgress: this.verbose }
-    );
+    this.embeddingService = options.embeddingService ?? createEmbeddingService({
+      modelName: this.embeddingModel,
+      showProgress: this.verbose,
+    });
 
     // Initialize ChromaDB - defaults to localhost:8000
     // ChromaDB server must be running for persistent storage.
@@ -572,7 +574,9 @@ export class SourceRetriever {
     const workerCount = getWorkerCount();
 
     // Initialize worker pool if enabled via CODEBAXING_WORKERS env var
-    if (workerCount > 0 && !this.embeddingPool) {
+    // Workers only apply to local ONNX embedding — cloud providers handle parallelism internally
+    const embeddingProvider = getConfiguredProvider();
+    if (embeddingProvider === 'local' && workerCount > 0 && !this.embeddingPool) {
       try {
         this.embeddingPool = getEmbeddingPool({ numWorkers: workerCount, modelName: this.embeddingModel });
         await this.embeddingPool.initialize();
@@ -580,7 +584,6 @@ export class SourceRetriever {
         const errMsg = (e as Error).message;
         console.error(`[codebaxing] Worker pool failed, using single-threaded: ${errMsg}`);
         this.embeddingPool = null;
-        // If workers failed due to corrupt model, purge cache so single-threaded retry gets a fresh download
         if (errMsg.includes('Protobuf parsing failed') || errMsg.includes('Load model from')) {
           const modelConfig = EMBEDDING_MODELS[this.embeddingModel];
           const modelId = modelConfig?.modelId ?? this.embeddingModel;
@@ -704,20 +707,24 @@ export class SourceRetriever {
         embeddingsToStore = embeddingsToStore.slice(0, remaining);
       }
 
-      // Store in ChromaDB (upsert for crash-resume support)
+      // Store in ChromaDB (parallel upserts for better throughput)
       const chromaBatchSize = 2000;
+      const upsertPromises: Promise<void>[] = [];
       for (let i = 0; i < chunksToStore.length; i += chromaBatchSize) {
         const end = Math.min(i + chromaBatchSize, chunksToStore.length);
         const subChunks = chunksToStore.slice(i, end);
         const subEmbeddings = embeddingsToStore.slice(i, end);
 
-        await this.collection!.upsert({
-          ids: subChunks.map(c => c.id),
-          embeddings: subEmbeddings,
-          documents: subChunks.map(c => c.text),
-          metadatas: subChunks.map(c => c.metadata),
-        });
+        upsertPromises.push(
+          this.collection!.upsert({
+            ids: subChunks.map(c => c.id),
+            embeddings: subEmbeddings,
+            documents: subChunks.map(c => c.text),
+            metadatas: subChunks.map(c => c.metadata),
+          }).then(() => {})
+        );
       }
+      await Promise.all(upsertPromises);
 
       totalSymbols += result.symbols;
       parseErrors += result.errors;
@@ -1016,9 +1023,9 @@ export class SourceRetriever {
         emit('embedding_start', { total: chunks.length });
         if (this.verbose) console.log(`Embedding ${chunks.length} chunks...`);
 
-        // Initialize worker pool if configured
+        // Initialize worker pool if configured (local provider only)
         const workerCount = getWorkerCount();
-        if (workerCount > 0 && !this.embeddingPool) {
+        if (getConfiguredProvider() === 'local' && workerCount > 0 && !this.embeddingPool) {
           try {
             this.embeddingPool = getEmbeddingPool({ numWorkers: workerCount, modelName: this.embeddingModel });
             await this.embeddingPool.initialize();

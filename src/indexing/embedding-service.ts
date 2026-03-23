@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { EmbeddingError } from '../core/exceptions.js';
+import type { IEmbeddingService } from '../core/interfaces.js';
 
 // ─── Device Configuration ─────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ export const DEFAULT_MODEL = 'all-MiniLM-L6-v2';
 
 // ─── EmbeddingService ────────────────────────────────────────────────────────
 
-export class EmbeddingService {
+export class EmbeddingService implements IEmbeddingService {
   private modelName: string;
   private config: EmbeddingModelConfig;
   private device: DeviceType;

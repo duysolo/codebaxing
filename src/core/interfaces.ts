@@ -14,3 +14,12 @@ export interface IParser {
   /** Return list of file extensions this parser supports. */
   getSupportedExtensions(): string[];
 }
+
+export interface IEmbeddingService {
+  readonly dimensions: number;
+  embed(text: string, isQuery?: boolean): Promise<number[]>;
+  embedBatch(texts: string[], isQuery?: boolean): Promise<number[][]>;
+  getStats(): Record<string, unknown>;
+  clearCache(): void;
+  unload(): Promise<void>;
+}

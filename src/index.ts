@@ -10,7 +10,7 @@ export const VERSION = '0.1.0';
 // Core models
 export { Symbol, SymbolType, ParsedFile, CodebaseIndex } from './core/models.js';
 export { Memory, MemoryType } from './core/models.js';
-export type { IParser } from './core/interfaces.js';
+export type { IParser, IEmbeddingService } from './core/interfaces.js';
 
 // Exceptions
 export {
@@ -31,3 +31,5 @@ export { SourceRetriever, discoverFiles, loadIgnoreConfig, ensureIgnoreConfig } 
 export type { IgnoreConfig } from './indexing/source-retriever.js';
 export { MemoryRetriever } from './indexing/memory-retriever.js';
 export { EmbeddingService, getEmbeddingService } from './indexing/embedding-service.js';
+export { CloudEmbeddingService } from './indexing/cloud-embedding-service.js';
+export { createEmbeddingService, getConfiguredProvider } from './indexing/embedding-factory.js';

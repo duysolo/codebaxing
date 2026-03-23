@@ -152,8 +152,7 @@ export class TreeSitterParser implements IParser {
       const tree = parser.parse(content.toString('utf-8'));
       const rootNode = tree.rootNode;
 
-      const symbols = this.extractSymbols(rootNode, content, filepath, language, config);
-      const imports = this.extractImports(rootNode, content, config);
+      const { symbols, imports } = this.extractAll(rootNode, content, filepath, language, config);
 
       return new ParsedFile({
         filepath,
@@ -258,16 +257,17 @@ export class TreeSitterParser implements IParser {
     return { loaded, failed };
   }
 
-  // ─── Symbol Extraction ───────────────────────────────────────────────────
+  // ─── Single-Pass Extraction (symbols + imports in one traversal) ─────────
 
-  private extractSymbols(
+  private extractAll(
     rootNode: SyntaxNode,
     content: Buffer,
     filepath: string,
     language: string,
     config: LanguageConfig
-  ): Symbol[] {
+  ): { symbols: Symbol[]; imports: string[] } {
     const symbols: Symbol[] = [];
+    const imports: string[] = [];
     const classStack: string[] = [];
     let currentClass: string | undefined;
 
@@ -275,9 +275,18 @@ export class TreeSitterParser implements IParser {
     const classTypes = config.classTypes;
     const methodTypes = config.methodTypes;
     const constantTypes = config.constantTypes ?? [];
+    const importTypes = config.importTypes;
 
     const traverse = (node: SyntaxNode) => {
       const nodeType = node.type;
+
+      // Collect imports in the same pass
+      if (importTypes.includes(nodeType)) {
+        const importText = this.getNodeText(node, content).trim();
+        if (importText && !imports.includes(importText)) {
+          imports.push(importText);
+        }
+      }
 
       if (classTypes.includes(nodeType)) {
         const symbol = this.extractClassSymbol(node, content, filepath, language, config);
@@ -310,7 +319,7 @@ export class TreeSitterParser implements IParser {
     };
 
     traverse(rootNode);
-    return symbols;
+    return { symbols, imports };
   }
 
   private extractClassSymbol(
@@ -468,30 +477,6 @@ export class TreeSitterParser implements IParser {
   }
 
   // ─── Imports and Calls ─────────────────────────────────────────────────
-
-  private extractImports(
-    rootNode: SyntaxNode,
-    content: Buffer,
-    config: LanguageConfig
-  ): string[] {
-    const imports: string[] = [];
-    const importTypes = config.importTypes;
-
-    const traverse = (node: SyntaxNode) => {
-      if (importTypes.includes(node.type)) {
-        const importText = this.getNodeText(node, content).trim();
-        if (importText && !imports.includes(importText)) {
-          imports.push(importText);
-        }
-      }
-      for (const child of node.children) {
-        traverse(child);
-      }
-    };
-
-    traverse(rootNode);
-    return imports;
-  }
 
   private extractImportsFromNode(
     node: SyntaxNode,
