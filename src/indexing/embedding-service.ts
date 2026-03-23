@@ -14,6 +14,9 @@
  * Note: macOS does not support CUDA. Use 'webgpu' for GPU acceleration on Mac.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { EmbeddingError } from '../core/exceptions.js';
 
 // ─── Device Configuration ─────────────────────────────────────────────────────
@@ -195,8 +198,25 @@ export class EmbeddingService {
         } catch (e) {
           const errorMsg = (e as Error).message;
 
+          // Detect corrupt cached model (e.g. incomplete download, broken ONNX protobuf)
+          if (errorMsg.includes('Protobuf parsing failed') || errorMsg.includes('Load model from')) {
+            const purged = this.purgeModelCache(this.config.modelId);
+            if (purged) {
+              console.error(
+                `[codebaxing] Corrupt model cache detected. Purged cache and re-downloading ${this.config.modelId}...`
+              );
+              try {
+                this.extractor = await pipeline('feature-extraction', this.config.modelId, pipelineOptions);
+              } catch (retryErr) {
+                throw new EmbeddingError(
+                  `Failed to load embedding model after re-download: ${(retryErr as Error).message}`
+                );
+              }
+            } else {
+              throw new EmbeddingError(`Failed to load embedding model: ${errorMsg}`);
+            }
           // If GPU failed, try falling back to CPU
-          if (this.device !== 'cpu' && (errorMsg.includes('GPU') || errorMsg.includes('CUDA') || errorMsg.includes('WebGPU'))) {
+          } else if (this.device !== 'cpu' && (errorMsg.includes('GPU') || errorMsg.includes('CUDA') || errorMsg.includes('WebGPU'))) {
             console.error(
               `[codebaxing] Failed to use ${deviceLabel}: ${errorMsg}. Falling back to CPU.`
             );
@@ -347,6 +367,26 @@ export class EmbeddingService {
     this.cache.clear();
     this.stats.cacheHits = 0;
     this.stats.cacheMisses = 0;
+  }
+
+  /**
+   * Purge cached model files for a given model ID (e.g. "Xenova/all-MiniLM-L6-v2").
+   * Returns true if cache was found and deleted, false otherwise.
+   */
+  private purgeModelCache(modelId: string): boolean {
+    if (!env?.cacheDir) return false;
+
+    const modelCacheDir = path.join(env.cacheDir, ...modelId.split('/'));
+    try {
+      if (fs.existsSync(modelCacheDir)) {
+        fs.rmSync(modelCacheDir, { recursive: true, force: true });
+        console.error(`[codebaxing] Purged corrupt model cache: ${modelCacheDir}`);
+        return true;
+      }
+    } catch (e) {
+      console.error(`[codebaxing] Failed to purge model cache at ${modelCacheDir}: ${(e as Error).message}`);
+    }
+    return false;
   }
 
   async unload(): Promise<void> {
