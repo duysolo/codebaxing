@@ -106,7 +106,7 @@ function getEmbedBatchSize(): number {
     const val = parseInt(envVal, 10);
     if (!isNaN(val) && val > 0) return val;
   }
-  return 32; // Default 32 texts per embed batch
+  return 800; // Default 800 texts per embed batch
 }
 
 // Parallel batches: how many batches to process concurrently
@@ -1045,7 +1045,7 @@ export class SourceRetriever {
           ? (t: string[]) => this.embeddingPool!.embedBatch(t)
           : (t: string[]) => this.embeddingService.embedBatch(t);
 
-        const batchSize = 100;
+        const batchSize = 800;
         const embedBatchSize = getEmbedBatchSize();
         for (let i = 0; i < chunks.length; i += batchSize) {
           const batch = chunks.slice(i, i + batchSize);
