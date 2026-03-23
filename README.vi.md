@@ -41,10 +41,10 @@ Tạo folder `.codebaxing/` chứa index. Chỉ cần làm một lần cho mỗi
 ### 3. Cài MCP Server cho AI Editors
 
 ```bash
-npx codebaxing@latest install              # Claude Desktop
-npx codebaxing@latest install --cursor     # Cursor
-npx codebaxing@latest install --windsurf   # Windsurf
-npx codebaxing@latest install --all        # Tất cả editors
+npx codebaxing install              # Claude Desktop
+npx codebaxing install --cursor     # Cursor
+npx codebaxing install --windsurf   # Windsurf
+npx codebaxing install --all        # Tất cả editors
 ```
 
 Restart editor. Giờ bạn có thể hỏi: *"Tìm logic xác thực người dùng"*
@@ -54,17 +54,17 @@ Restart editor. Giờ bạn có thể hỏi: *"Tìm logic xác thực người d
 | Lệnh | Mô tả |
 |------|-------|
 | `npx codebaxing@latest index <path>` | Index codebase (**bắt buộc đầu tiên**) |
-| `npx codebaxing@latest search <query>` | Tìm kiếm code |
-| `npx codebaxing@latest stats [path]` | Xem thống kê index |
-| `npx codebaxing@latest install [--editor]` | Cài MCP server |
-| `npx codebaxing@latest uninstall [--editor]` | Gỡ MCP server |
+| `npx codebaxing search <query>` | Tìm kiếm code |
+| `npx codebaxing stats [path]` | Xem thống kê index |
+| `npx codebaxing install [--editor]` | Cài MCP server |
+| `npx codebaxing uninstall [--editor]` | Gỡ MCP server |
 
-> **Tip:** Dùng `@latest` để luôn lấy version mới nhất.
+> **Tip:** Dùng `@latest` cho `index` để luôn lấy version mới nhất.
 
 ### Search Options
 
 ```bash
-npx codebaxing@latest search "auth middleware" --path ./src --limit 10
+npx codebaxing search "auth middleware" --path ./src --limit 10
 ```
 
 - `--path, -p` - Đường dẫn codebase (mặc định: thư mục hiện tại)
