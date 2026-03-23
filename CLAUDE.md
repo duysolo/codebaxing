@@ -60,6 +60,7 @@ src/
 |----------|-------------|---------|
 | `CHROMADB_URL` | ChromaDB server URL (**required**) | - |
 | `CODEBAXING_DEVICE` | Compute device: `cpu`, `cuda`, `webgpu`, `auto` | `cpu` |
+| `CODEBAXING_MODEL_CACHE` | Directory for embedding model cache | `~/.cache/codebaxing/models` |
 
 ### ChromaDB Setup (Required)
 ChromaDB server must be running. Start with Docker:
@@ -104,7 +105,7 @@ npm run typecheck         # Type check without emit
 ## Key Technical Details
 
 - **Embedding Model**: `Xenova/all-MiniLM-L6-v2` (384 dims, ONNX)
-- **Model Cache**: `~/.cache/huggingface/` (~90MB)
+- **Model Cache**: `~/.cache/codebaxing/models/` (~90MB, persists across npx runs)
 - **Vector DB**: ChromaDB (Node.js client requires server for persistence)
 - **Parser**: Tree-sitter with native Node.js bindings
 - **MCP SDK**: `@modelcontextprotocol/sdk`

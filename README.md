@@ -98,6 +98,7 @@ After installing, AI agents can use these tools:
 | `CODEBAXING_MAX_CHUNKS` | Max chunks to index | `100000` |
 | `CODEBAXING_FILES_PER_BATCH` | Files per batch (lower = less RAM) | `50` |
 | `CODEBAXING_PARALLEL_BATCHES` | Concurrent batches (higher = faster) | `3` |
+| `CODEBAXING_MODEL_CACHE` | Directory for embedding model cache | `~/.cache/codebaxing/models` |
 
 ### Manual Editor Config
 
@@ -160,10 +161,13 @@ Python, JavaScript, TypeScript, Go, Rust, Java, C/C++, C#, Ruby, PHP, Kotlin, Sw
 
 | Component | Technology |
 |-----------|------------|
-| Embedding Model | `all-MiniLM-L6-v2` (384 dimensions) |
+| Embedding Model | `all-MiniLM-L6-v2` (384 dimensions, ONNX) |
+| Model Cache | `~/.cache/codebaxing/models/` (~90MB, downloaded once) |
 | Vector Database | ChromaDB |
 | Code Parser | Tree-sitter |
 | MCP SDK | `@modelcontextprotocol/sdk` |
+
+The embedding model is downloaded from HuggingFace on first run and cached locally at `~/.cache/codebaxing/models/`. Subsequent runs reuse the cached model without network access. To use a custom cache location, set `CODEBAXING_MODEL_CACHE`.
 
 ## License
 
