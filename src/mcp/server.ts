@@ -495,6 +495,9 @@ async function fullIndex(
     persistPath: paths.chromaPath,
   });
 
+  // Load previous metadata for resume support (skips already-indexed files)
+  retriever.loadMetadata(paths.metadataPath);
+
   await retriever.indexCodebase({
     fileExtensions: fileExtensions ?? SUPPORTED_EXTENSIONS,
   });

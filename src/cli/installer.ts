@@ -241,6 +241,10 @@ async function runIndex(codebasePath: string): Promise<void> {
 
       if (isLegacy) {
         console.log('⚠️  Existing index uses legacy format (absolute paths). Running full re-index to upgrade...\n');
+      } else if (hasExisting) {
+        // Previous partial index exists — load metadata for resume
+        retriever.loadMetadata(paths.metadataPath);
+        console.log('📋 Resuming interrupted index...\n');
       } else {
         console.log('📋 No existing index. Running full index...\n');
       }

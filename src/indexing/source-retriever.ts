@@ -479,21 +479,42 @@ export class SourceRetriever {
 
     // Step 1: Find all files
     const extensionsSet = new Set(fileExtensions);
-    const allFiles = discoverFiles(this.codebasePath, extensionsSet, this.verbose);
-    this.stats.totalFiles = allFiles.length;
+    const discoveredFiles = discoverFiles(this.codebasePath, extensionsSet, this.verbose);
 
-    // Store file modification times (relative paths as keys)
-    const fileMtimes: Record<string, number> = {};
-    for (const filepath of allFiles) {
+    // Collect current file mtimes (relative paths as keys)
+    const currentMtimes: Record<string, number> = {};
+    for (const filepath of discoveredFiles) {
       try {
         const relPath = path.relative(this.codebasePath, filepath);
-        fileMtimes[relPath] = fs.statSync(filepath).mtimeMs;
+        currentMtimes[relPath] = fs.statSync(filepath).mtimeMs;
       } catch { /* skip */ }
     }
-    this.metadata.fileMtimes = fileMtimes;
+
+    // Resume support: load previous metadata to skip already-indexed files
+    const prevMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
+    let allFiles = discoveredFiles;
+    let skippedResumed = 0;
+    if (Object.keys(prevMtimes).length > 0) {
+      allFiles = discoveredFiles.filter(fp => {
+        const relPath = path.relative(this.codebasePath, fp);
+        const prevMtime = prevMtimes[relPath];
+        if (prevMtime !== undefined && prevMtime === currentMtimes[relPath]) {
+          skippedResumed++;
+          return false; // Already indexed and unchanged
+        }
+        return true;
+      });
+      if (skippedResumed > 0 && this.verbose) {
+        console.log(`Resuming: skipping ${skippedResumed.toLocaleString()} already-indexed files, ${allFiles.length.toLocaleString()} remaining`);
+      }
+    }
+
+    // Start with previously indexed mtimes, will add new ones progressively
+    this.metadata.fileMtimes = { ...prevMtimes };
+    this.stats.totalFiles = discoveredFiles.length;
 
     emit('files_found', { files: allFiles, codebasePath: this.codebasePath });
-    if (!options.progressCallback) this.log(`Found ${allFiles.length.toLocaleString()} files`);
+    if (!options.progressCallback) this.log(`Found ${discoveredFiles.length.toLocaleString()} files`);
 
     // Warn for large codebases
     if (this.verbose && allFiles.length > 1000) {
@@ -503,12 +524,8 @@ export class SourceRetriever {
       console.log(`   Tip: Set CODEBAXING_FILES_PER_BATCH=30 for less RAM usage\n`);
     }
 
-    // Step 2: Create ChromaDB collection FIRST (before loading data)
-    try {
-      await this.chromaClient.deleteCollection({ name: this.collectionName });
-    } catch { /* collection doesn't exist */ }
-
-    this.collection = await this.chromaClient.createCollection({
+    // Step 2: Get or create ChromaDB collection (supports resume on crash)
+    this.collection = await this.chromaClient.getOrCreateCollection({
       name: this.collectionName,
       metadata: { description: `Code embeddings for ${path.basename(this.codebasePath)}` },
     });
@@ -540,6 +557,7 @@ export class SourceRetriever {
       symbols: number;
       errors: number;
       fileCount: number;
+      batchFiles: string[];
     } | null> => {
       if (reachedMaxChunks) return null;
 
@@ -567,7 +585,7 @@ export class SourceRetriever {
       }
 
       if (batchChunks.length === 0) {
-        return { chunks: [], embeddings: [], symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length };
+        return { chunks: [], embeddings: [], symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length, batchFiles };
       }
 
       // Embed in sub-batches
@@ -588,7 +606,7 @@ export class SourceRetriever {
         }
       }
 
-      return { chunks: batchChunks, embeddings: allEmbeddings, symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length };
+      return { chunks: batchChunks, embeddings: allEmbeddings, symbols: batchSymbols, errors: batchErrors, fileCount: batchFiles.length, batchFiles };
     };
 
     // Store batch results to ChromaDB (must be sequential to avoid race conditions)
@@ -629,14 +647,14 @@ export class SourceRetriever {
         embeddingsToStore = embeddingsToStore.slice(0, remaining);
       }
 
-      // Store in ChromaDB
-      const chromaBatchSize = 5000;
+      // Store in ChromaDB (upsert for crash-resume support)
+      const chromaBatchSize = 500;
       for (let i = 0; i < chunksToStore.length; i += chromaBatchSize) {
         const end = Math.min(i + chromaBatchSize, chunksToStore.length);
         const subChunks = chunksToStore.slice(i, end);
         const subEmbeddings = embeddingsToStore.slice(i, end);
 
-        await this.collection!.add({
+        await this.collection!.upsert({
           ids: subChunks.map(c => c.id),
           embeddings: subEmbeddings,
           documents: subChunks.map(c => c.text),
@@ -660,6 +678,21 @@ export class SourceRetriever {
       }
 
       emit('embedding_progress', { current: totalChunks, total: allFiles.length * 5 });
+
+      // Save metadata progressively so resume works after crash
+      if (this.persistPath) {
+        // Mark batch files as indexed in metadata
+        const progressMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
+        for (const fp of result.batchFiles) {
+          try {
+            const relPath = path.relative(this.codebasePath, fp);
+            progressMtimes[relPath] = fs.statSync(fp).mtimeMs;
+          } catch { /* skip */ }
+        }
+        this.metadata.fileMtimes = progressMtimes;
+        const metadataPath = path.join(path.dirname(this.persistPath), 'metadata.json');
+        this.saveMetadata(metadataPath);
+      }
     };
 
     // Process batches with concurrency limit using a sliding window
@@ -700,6 +733,9 @@ export class SourceRetriever {
     this.stats.totalChunks = totalChunks;
     this.stats.parseErrors = parseErrors;
     this.stats.indexingTime = (performance.now() - startTime) / 1000;
+
+    // Final metadata save with all file mtimes (including resumed files)
+    this.metadata.fileMtimes = currentMtimes;
     emit('complete', { stats: { ...this.stats } });
 
     if (!options.progressCallback) {
@@ -898,7 +934,7 @@ export class SourceRetriever {
             const uniqueEmb = uniqueIndices.map(j => embeddings[j]);
 
             if (uniqueBatch.length > 0) {
-              await this.collection.add({
+              await this.collection.upsert({
                 ids: uniqueBatch.map(c => c.id),
                 embeddings: uniqueEmb,
                 documents: uniqueBatch.map(c => c.text),
