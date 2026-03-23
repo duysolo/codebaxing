@@ -37,7 +37,7 @@ export class EmbeddingWorkerPool {
   private initPromise: Promise<void> | null = null;
 
   constructor(options: PoolOptions = {}) {
-    this.numWorkers = options.numWorkers ?? Math.min(os.cpus().length, 4);
+    this.numWorkers = options.numWorkers ?? 2;
     this.modelName = options.modelName ?? 'all-MiniLM-L6-v2';
 
     for (let i = 0; i < this.numWorkers; i++) {

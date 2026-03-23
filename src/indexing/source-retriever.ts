@@ -141,7 +141,7 @@ function getWorkerCount(): number {
     const val = parseInt(envVal, 10);
     if (!isNaN(val) && val >= 0 && val <= 8) return val;
   }
-  return 4; // Default: 4 workers
+  return 2; // Default: 2 workers
 }
 
 // ─── Ignore Config ──────────────────────────────────────────────────────────
