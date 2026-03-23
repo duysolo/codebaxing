@@ -398,10 +398,13 @@ export class SourceRetriever {
 
       if (this.verbose) {
         const elapsed = (performance.now() - batchStartTime) / 1000;
-        const rate = batchStart / elapsed || 1;
-        const remaining = (allFiles.length - batchStart) / rate;
-        const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
-        process.stdout.write(`\rBatch ${batchIdx + 1}/${numBatches} (files ${batchStart + 1}-${batchEnd}/${allFiles.length}) ETA: ${eta}      `);
+        const filesProcessed = batchStart;
+        const rate = filesProcessed / elapsed || 1;
+        const remainingFiles = allFiles.length - filesProcessed;
+        const etaSecs = remainingFiles / rate;
+        const eta = etaSecs > 60 ? `${(etaSecs / 60).toFixed(1)}m` : `${Math.round(etaSecs)}s`;
+        const pct = ((filesProcessed / allFiles.length) * 100).toFixed(1);
+        console.log(`\n📦 Batch ${batchIdx + 1}/${numBatches} | Files: ${batchStart + 1}-${batchEnd} of ${allFiles.length.toLocaleString()} (${pct}%) | ETA: ${eta}`);
       }
 
       // 3a. Parse this batch
@@ -480,15 +483,15 @@ export class SourceRetriever {
 
       totalChunks += batchChunks.length;
 
+      if (this.verbose) {
+        console.log(`   ✓ Parsed ${batchFiles.length} files → ${batchChunks.length} chunks | Total: ${totalChunks.toLocaleString()} chunks`);
+      }
+
       // 3d. Clear references to help GC
       batchChunks.length = 0;
       allEmbeddings.length = 0;
 
       emit('embedding_progress', { current: totalChunks, total: allFiles.length * 5 }); // rough estimate
-    }
-
-    if (this.verbose) {
-      process.stdout.write('\r' + ' '.repeat(100) + '\r');
     }
 
     this.stats.totalSymbols = totalSymbols;

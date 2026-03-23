@@ -5,47 +5,40 @@
 
 **[English](README.md)** | [Tiếng Việt](README.vi.md)
 
-MCP server for **semantic code search**. Index your codebase and search using natural language queries.
+MCP server for **semantic code search**. Index your codebase once, then search using natural language.
 
-## Table of Contents
-
-- [The Idea](#the-idea)
-- [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [How It Works](#how-it-works)
-
-## The Idea
-
-Traditional code search (grep, ripgrep) matches exact text. But developers think in concepts:
-
-- *"Where is the authentication logic?"* - not `grep "authentication"`
-- *"Find database connection code"* - not `grep "database"`
-
-**Codebaxing** bridges this gap using **semantic search**:
+## How It Works
 
 ```
-Query: "user authentication"
-         ↓
-Finds: login(), validateCredentials(), checkPassword(), authMiddleware()
-       (even if they don't contain the word "authentication")
+Your Code → Tree-sitter Parser → Symbols → Embedding Model → Vectors → ChromaDB
+                                                                           ↓
+"find auth logic" → Embedding → Query Vector → Similarity Search → Results
 ```
+
+Traditional search matches exact text. Codebaxing understands meaning:
+
+| Query | Finds (even without exact match) |
+|-------|----------------------------------|
+| "authentication" | login(), validateCredentials(), authMiddleware() |
+| "database connection" | connectDB(), prismaClient, repository.query() |
 
 ## Quick Start
 
-### Step 1: Start ChromaDB (Required)
-
-ChromaDB is required for persistent storage. Start it with Docker:
+### 1. Start ChromaDB
 
 ```bash
 docker run -d -p 8000:8000 --name chromadb chromadb/chroma
-
-# Verify it's running
-curl http://localhost:8000/api/v2/heartbeat
 ```
 
-### Step 2: Install to Your Editor
+### 2. Index Your Codebase (CLI)
+
+```bash
+npx codebaxing index /path/to/your/project
+```
+
+This creates a `.codebaxing/` folder with the index. Only needs to be done once per project.
+
+### 3. Install MCP Server for AI Editors
 
 ```bash
 npx codebaxing install              # Claude Desktop
@@ -54,147 +47,41 @@ npx codebaxing install --windsurf   # Windsurf
 npx codebaxing install --all        # All editors
 ```
 
-### Step 3: Restart Editor and Use
+Restart your editor. Now you can ask: *"Find the authentication logic"*
 
-Restart your editor, then ask: *"Index my project at /path/to/myproject"*
-
-### For CLI Usage
-
-```bash
-# Set environment variable (add to ~/.bashrc or ~/.zshrc)
-export CHROMADB_URL=http://localhost:8000
-
-# Index and search
-npx codebaxing index /path/to/project
-npx codebaxing search "authentication logic"
-```
-
-## Installation
-
-### Step 1: Start ChromaDB (Required)
-
-ChromaDB is **required** for storing code indexes. Without it, Codebaxing won't work.
-
-```bash
-# Start ChromaDB with Docker
-docker run -d -p 8000:8000 --name chromadb chromadb/chroma
-
-# Verify it's running
-curl http://localhost:8000/api/v2/heartbeat
-# Should return: {"nanosecond heartbeat":...}
-```
-
-**Tip:** Add this to your system startup or use Docker Compose for persistence.
-
-### Step 2: Install to AI Editor
-
-```bash
-npx codebaxing install              # Claude Desktop (default)
-npx codebaxing install --cursor     # Cursor
-npx codebaxing install --windsurf   # Windsurf (Codeium)
-npx codebaxing install --zed        # Zed
-npx codebaxing install --all        # All supported editors
-```
-
-The installer automatically configures `CHROMADB_URL=http://localhost:8000` in your editor.
-
-### Step 3: Restart Your Editor
-
-The Codebaxing tools are now available!
-
-### Uninstall
-
-```bash
-npx codebaxing uninstall            # Claude Desktop
-npx codebaxing uninstall --all      # All editors
-```
-
-## Usage
-
-### Via AI Agents (Claude Desktop, Cursor, etc.)
-
-After installing, interact through natural conversation:
-
-#### 1. Index your codebase (Required first)
-
-```
-You: Index the codebase at /Users/me/projects/myapp
-```
-
-> **Note:** First run downloads the embedding model (~90MB), takes 1-2 minutes.
-
-#### 2. Search for code
-
-```
-You: Find code that handles user authentication
-You: Where is the database connection logic?
-You: Show me error handling patterns
-```
-
-#### 3. Use memory (optional)
-
-```
-You: Remember that we're using PostgreSQL with Prisma ORM
-You: What decisions have we made about the database?
-```
-
-#### MCP Tools Reference
-
-| Tool | Description | Example |
-|------|-------------|---------|
-| `index` | Index a codebase (**required first**) | `index(path="/project")` |
-| `search` | Semantic code search | `search(question="auth middleware")` |
-| `stats` | Index statistics | `stats()` |
-| `languages` | Supported extensions | `languages()` |
-| `remember` | Store memory | `remember(content="Using Redis", memory_type="decision")` |
-| `recall` | Retrieve memories | `recall(query="database")` |
-| `forget` | Delete memories | `forget(memory_type="note")` |
-| `memory-stats` | Memory statistics | `memory-stats()` |
-
-### Via CLI (Terminal)
-
-CLI commands **require ChromaDB** running. See [Setup ChromaDB](#step-2-optional-setup-chromadb-for-persistent-storage).
-
-#### Prerequisites
-
-```bash
-# Start ChromaDB
-docker run -d -p 8000:8000 --name chromadb chromadb/chroma
-
-# Set environment variable (add to your ~/.bashrc or ~/.zshrc)
-export CHROMADB_URL=http://localhost:8000
-```
-
-#### Commands
-
-```bash
-# Index a codebase
-npx codebaxing index /path/to/project
-
-# Search for code
-npx codebaxing search "authentication middleware"
-npx codebaxing search "database connection" --path ./src --limit 10
-
-# Show index statistics
-npx codebaxing stats /path/to/project
-
-# Show help
-npx codebaxing --help
-```
-
-#### CLI Reference
+## CLI Commands
 
 | Command | Description |
 |---------|-------------|
-| `npx codebaxing install [--editor]` | Install MCP server to AI editor |
-| `npx codebaxing uninstall [--editor]` | Uninstall MCP server |
-| `npx codebaxing index <path>` | Index a codebase |
-| `npx codebaxing search <query> [options]` | Search indexed codebase |
+| `npx codebaxing index <path>` | Index a codebase (**required first**) |
+| `npx codebaxing search <query>` | Search indexed code |
 | `npx codebaxing stats [path]` | Show index statistics |
+| `npx codebaxing install [--editor]` | Install MCP server |
+| `npx codebaxing uninstall [--editor]` | Uninstall MCP server |
 
-**Search options:**
-- `--path, -p <path>` - Codebase path (default: current directory)
-- `--limit, -n <number>` - Number of results (default: 5)
+### Search Options
+
+```bash
+npx codebaxing search "auth middleware" --path ./src --limit 10
+```
+
+- `--path, -p` - Codebase path (default: current directory)
+- `--limit, -n` - Number of results (default: 5)
+
+## MCP Tools (for AI Agents)
+
+After installing, AI agents can use these tools:
+
+| Tool | Description |
+|------|-------------|
+| `search` | Semantic code search |
+| `stats` | Index statistics |
+| `languages` | Supported file extensions |
+| `remember` | Store project memory |
+| `recall` | Retrieve memories |
+| `forget` | Delete memories |
+
+> **Note:** The `index` tool is disabled for AI agents. Use CLI to index: `npx codebaxing index <path>`
 
 ## Configuration
 
@@ -202,29 +89,18 @@ npx codebaxing --help
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CHROMADB_URL` | ChromaDB server URL (**required**) | - |
-| `CODEBAXING_DEVICE` | Compute device: `cpu`, `webgpu`, `cuda`, `auto` | `cpu` |
-| `CODEBAXING_MAX_FILE_SIZE` | Max file size to index (MB) | `1` |
+| `CHROMADB_URL` | ChromaDB server URL | `http://localhost:8000` |
+| `CODEBAXING_DEVICE` | Compute: `cpu`, `webgpu`, `cuda` | `cpu` |
+| `CODEBAXING_MAX_FILE_SIZE` | Max file size in MB | `1` |
+| `CODEBAXING_MAX_CHUNKS` | Max chunks to index | `100000` |
+| `CODEBAXING_FILES_PER_BATCH` | Files per batch (lower = less RAM) | `50` |
 
-### GPU Acceleration
-
-```bash
-export CODEBAXING_DEVICE=webgpu  # macOS (Metal)
-export CODEBAXING_DEVICE=cuda    # Linux/Windows (NVIDIA)
-export CODEBAXING_DEVICE=auto    # Auto-detect
-```
-
-**Note:** macOS does not support CUDA. Use `webgpu` for GPU acceleration on Mac.
-
-### Manual Editor Configuration
-
-If you prefer to configure manually instead of using `npx codebaxing install`:
+### Manual Editor Config
 
 <details>
 <summary>Claude Desktop</summary>
 
-`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
-`%APPDATA%\Claude\claude_desktop_config.json` (Windows)
+`~/Library/Application Support/Claude/claude_desktop_config.json`
 
 ```json
 {
@@ -232,9 +108,7 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
     "codebaxing": {
       "command": "npx",
       "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
+      "env": { "CHROMADB_URL": "http://localhost:8000" }
     }
   }
 }
@@ -252,9 +126,7 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
     "codebaxing": {
       "command": "npx",
       "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
+      "env": { "CHROMADB_URL": "http://localhost:8000" }
     }
   }
 }
@@ -262,146 +134,32 @@ If you prefer to configure manually instead of using `npx codebaxing install`:
 </details>
 
 <details>
-<summary>Windsurf</summary>
+<summary>Other Editors</summary>
 
-`~/.codeium/windsurf/mcp_config.json`
+**Windsurf:** `~/.codeium/windsurf/mcp_config.json`
+**Zed:** `~/.config/zed/settings.json` (use `context_servers` key)
+**VS Code + Continue:** `~/.continue/config.json`
 
-```json
-{
-  "mcpServers": {
-    "codebaxing": {
-      "command": "npx",
-      "args": ["-y", "codebaxing"],
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
 </details>
-
-<details>
-<summary>Zed</summary>
-
-`~/.config/zed/settings.json`
-
-```json
-{
-  "context_servers": {
-    "codebaxing": {
-      "command": {
-        "path": "npx",
-        "args": ["-y", "codebaxing"]
-      },
-      "env": {
-        "CHROMADB_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary>VS Code + Continue</summary>
-
-`~/.continue/config.json`
-
-```json
-{
-  "experimental": {
-    "modelContextProtocolServers": [
-      {
-        "transport": {
-          "type": "stdio",
-          "command": "npx",
-          "args": ["-y", "codebaxing"],
-          "env": {
-            "CHROMADB_URL": "http://localhost:8000"
-          }
-        }
-      }
-    ]
-  }
-}
-```
-</details>
-
-## How It Works
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         INDEXING                                │
-├─────────────────────────────────────────────────────────────────┤
-│   Source Files (.py, .ts, .js, .go, .rs, ...)                  │
-│         │                                                       │
-│         ▼                                                       │
-│   ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│   │ Tree-sitter  │───▶│   Symbols    │───▶│  Embedding   │     │
-│   │   Parser     │    │  Extraction  │    │    Model     │     │
-│   └──────────────┘    └──────────────┘    └──────────────┘     │
-│         │                    │                    │             │
-│    Parse AST            Functions,          Text → Vector       │
-│                        Classes, etc.        (384 dimensions)    │
-│                                                  │              │
-│                                                  ▼              │
-│                                          ┌──────────────┐      │
-│                                          │   ChromaDB   │      │
-│                                          │  (vectors)   │      │
-│                                          └──────────────┘      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Why Semantic Search Works
-
-The embedding model understands that:
-
-| Query | Finds (even without exact match) |
-|-------|----------------------------------|
-| "authentication" | login, credentials, auth, signin, validateUser |
-| "database" | query, SQL, connection, ORM, repository |
-| "error handling" | try/catch, exception, throw, ErrorBoundary |
 
 ## Supported Languages
 
-Python, JavaScript, TypeScript, C, C++, Bash, Go, Java, Kotlin, Rust, Ruby, C#, PHP, Scala, Swift, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, CSS, HTML, Vue, JSON, YAML, TOML, Makefile
-
-## Features
-
-- **Semantic Code Search**: Find code by describing what you're looking for
-- **24+ Languages**: Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, and more
-- **Memory Layer**: Store and recall project context across sessions
-- **Incremental Indexing**: Only re-index changed files
-- **100% Local**: No API calls, no cloud, works offline
-- **GPU Acceleration**: Optional WebGPU/CUDA support
+Python, JavaScript, TypeScript, Go, Rust, Java, C/C++, C#, Ruby, PHP, Kotlin, Swift, Scala, Lua, Dart, Elixir, Haskell, OCaml, Zig, Perl, Bash, HTML, CSS, Vue, JSON, YAML, TOML, Makefile
 
 ## Requirements
 
 - Node.js >= 20.0.0
-- Docker (for ChromaDB - **required**)
-- ~500MB disk space for embedding model (downloaded on first run)
+- Docker (for ChromaDB)
+- ~500MB disk space (embedding model)
 
 ## Technical Details
 
 | Component | Technology |
 |-----------|------------|
 | Embedding Model | `all-MiniLM-L6-v2` (384 dimensions) |
-| Model Runtime | `@huggingface/transformers` (ONNX) |
 | Vector Database | ChromaDB |
 | Code Parser | Tree-sitter |
 | MCP SDK | `@modelcontextprotocol/sdk` |
-
-## Development
-
-```bash
-npm install           # Install dependencies
-npm run dev           # Run with tsx (no build needed)
-npm run build         # Compile TypeScript
-npm test              # Run tests
-```
 
 ## License
 
