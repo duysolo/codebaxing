@@ -56,6 +56,7 @@ Restart editor. Giờ bạn có thể hỏi: *"Tìm logic xác thực người d
 | `npx codebaxing@latest index <path>` | Index codebase (**bắt buộc đầu tiên**) |
 | `npx codebaxing search <query>` | Tìm kiếm code |
 | `npx codebaxing stats [path]` | Xem thống kê index |
+| `npx codebaxing clean [path]` | Xóa index (reset) |
 | `npx codebaxing install [--editor]` | Cài MCP server |
 | `npx codebaxing uninstall [--editor]` | Gỡ MCP server |
 

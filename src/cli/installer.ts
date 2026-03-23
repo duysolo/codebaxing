@@ -405,6 +405,48 @@ async function runStats(codebasePath?: string): Promise<void> {
   }
 }
 
+// ─── Clean Command ──────────────────────────────────────────────────────────
+
+async function runClean(codebasePath?: string): Promise<void> {
+  const absolutePath = path.resolve(codebasePath || process.cwd());
+  const paths = getCodebaxingPaths(absolutePath);
+
+  console.log('\n🔧 Codebaxing - Clean Index\n');
+  console.log(`📁 Path: ${absolutePath}\n`);
+
+  if (!fs.existsSync(paths.codebaxingDir)) {
+    console.log('ℹ️  No index found. Nothing to clean.\n');
+    return;
+  }
+
+  // Show what will be deleted
+  try {
+    const metadata = fs.existsSync(paths.metadataPath)
+      ? JSON.parse(fs.readFileSync(paths.metadataPath, 'utf-8'))
+      : null;
+
+    if (metadata?.stats) {
+      console.log('📊 Current index:');
+      console.log(`   Files:   ${metadata.stats.totalFiles || 0}`);
+      console.log(`   Chunks:  ${metadata.stats.totalChunks || 0}`);
+      if (metadata.indexedAt) {
+        console.log(`   Created: ${metadata.indexedAt}`);
+      }
+      console.log('');
+    }
+  } catch { /* ignore */ }
+
+  // Delete the .codebaxing directory
+  try {
+    fs.rmSync(paths.codebaxingDir, { recursive: true, force: true });
+    console.log('✅ Index cleaned successfully.\n');
+    console.log('To re-index: npx codebaxing@latest index ' + absolutePath + '\n');
+  } catch (err) {
+    console.error(`❌ Failed to clean index: ${(err as Error).message}\n`);
+    process.exit(1);
+  }
+}
+
 // ─── CLI ─────────────────────────────────────────────────────────────────────
 
 function printUsage(): void {
@@ -417,6 +459,7 @@ Usage:
   npx codebaxing index <path>          Index a codebase
   npx codebaxing search <query> [opts] Search indexed codebase
   npx codebaxing stats [path]          Show index statistics
+  npx codebaxing clean [path]          Remove index (reset)
 
 Install Options:
   --claude     Claude Desktop (default)
@@ -434,7 +477,7 @@ Examples:
   npx codebaxing install --all              # Install to all editors
   npx codebaxing index ./my-project         # Index a project
   npx codebaxing search "auth middleware"   # Search current directory
-  npx codebaxing search "login" -p ./src -n 10
+  npx codebaxing clean ./my-project         # Remove index
 `);
 }
 
@@ -474,7 +517,7 @@ async function main(): Promise<void> {
   const command = args[0] || '';
 
   // MCP server mode (no args or unknown command)
-  if (!command || !['install', 'uninstall', 'index', 'search', 'stats', 'help', '--help', '-h'].includes(command)) {
+  if (!command || !['install', 'uninstall', 'index', 'search', 'stats', 'clean', 'help', '--help', '-h'].includes(command)) {
     import('../mcp/server.js').catch(() => printUsage());
     return;
   }
@@ -547,6 +590,12 @@ async function main(): Promise<void> {
   // Stats
   if (command === 'stats') {
     await runStats(args[1]);
+    return;
+  }
+
+  // Clean
+  if (command === 'clean') {
+    await runClean(args[1]);
     return;
   }
 }

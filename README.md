@@ -56,6 +56,7 @@ Restart your editor. Now you can ask: *"Find the authentication logic"*
 | `npx codebaxing@latest index <path>` | Index a codebase (**required first**) |
 | `npx codebaxing search <query>` | Search indexed code |
 | `npx codebaxing stats [path]` | Show index statistics |
+| `npx codebaxing clean [path]` | Remove index (reset) |
 | `npx codebaxing install [--editor]` | Install MCP server |
 | `npx codebaxing uninstall [--editor]` | Uninstall MCP server |
 
