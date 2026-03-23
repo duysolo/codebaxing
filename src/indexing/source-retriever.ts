@@ -118,11 +118,103 @@ function getParallelBatches(): number {
   return 3; // Default 3 concurrent batches
 }
 
+// ─── Ignore Config ──────────────────────────────────────────────────────────
+
+const IGNORE_CONFIG_FILE = 'ignore.json';
+const CODEBAXING_DIR = '.codebaxing';
+
+export interface IgnoreConfig {
+  /** Directory paths to skip, relative to codebase root (e.g. ["src/data", "tools/scripts"]) */
+  directories: string[];
+  /** Specific file paths to skip, relative to codebase root (e.g. ["src/generated.ts"]) */
+  files: string[];
+  /** Glob-like patterns to skip files (e.g. ["*.test.ts", "*.spec.js", "migrations/**"]) */
+  patterns: string[];
+}
+
+const DEFAULT_IGNORE_CONFIG: IgnoreConfig = {
+  directories: [],
+  files: [],
+  patterns: [],
+};
+
+/**
+ * Load ignore config from `.codebaxing/ignore.json`.
+ * Returns default (empty) config if file doesn't exist or is invalid.
+ */
+export function loadIgnoreConfig(codebasePath: string): IgnoreConfig {
+  const configPath = path.join(codebasePath, CODEBAXING_DIR, IGNORE_CONFIG_FILE);
+  try {
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return {
+      directories: Array.isArray(parsed.directories) ? parsed.directories : [],
+      files: Array.isArray(parsed.files) ? parsed.files : [],
+      patterns: Array.isArray(parsed.patterns) ? parsed.patterns : [],
+    };
+  } catch {
+    return { ...DEFAULT_IGNORE_CONFIG };
+  }
+}
+
+/**
+ * Create `.codebaxing/ignore.json` with defaults if it doesn't exist.
+ * Also ensures `.codebaxing/` directory exists.
+ */
+export function ensureIgnoreConfig(codebasePath: string): void {
+  const dir = path.join(codebasePath, CODEBAXING_DIR);
+  const configPath = path.join(dir, IGNORE_CONFIG_FILE);
+
+  fs.mkdirSync(dir, { recursive: true });
+
+  if (!fs.existsSync(configPath)) {
+    const template: IgnoreConfig = {
+      directories: [],
+      files: [],
+      patterns: [],
+    };
+    fs.writeFileSync(configPath, JSON.stringify(template, null, 2) + '\n');
+  }
+}
+
+/**
+ * Convert a simple glob pattern to a RegExp.
+ * Supports: * (any chars except /), ** (any chars including /), ? (single char)
+ */
+function globToRegex(pattern: string): RegExp {
+  let regexStr = '';
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i];
+    if (ch === '*') {
+      if (pattern[i + 1] === '*') {
+        // ** matches everything including path separators
+        regexStr += '.*';
+        i += 2;
+        // Skip following / if present
+        if (pattern[i] === '/') i++;
+        continue;
+      }
+      // * matches everything except /
+      regexStr += '[^/]*';
+    } else if (ch === '?') {
+      regexStr += '[^/]';
+    } else if ('.+^${}()|[]\\'.includes(ch)) {
+      regexStr += '\\' + ch;
+    } else {
+      regexStr += ch;
+    }
+    i++;
+  }
+  return new RegExp(`^${regexStr}$`);
+}
+
 // ─── File Discovery ──────────────────────────────────────────────────────────
 
 export interface DiscoverFilesOptions {
   extensions?: Set<string>;
   maxFileSize?: number; // in bytes, default 5MB
+  ignoreConfig?: IgnoreConfig;
 }
 
 export function discoverFiles(
@@ -133,6 +225,7 @@ export function discoverFiles(
   // Handle both old signature (Set<string>) and new signature (options object)
   let exts: Set<string>;
   let maxFileSize: number;
+  let ignoreConfig: IgnoreConfig | undefined;
 
   if (optionsOrExtensions instanceof Set) {
     exts = optionsOrExtensions;
@@ -140,7 +233,19 @@ export function discoverFiles(
   } else {
     exts = optionsOrExtensions?.extensions ?? SUPPORTED_EXTENSIONS_SET;
     maxFileSize = optionsOrExtensions?.maxFileSize ?? getMaxFileSize();
+    ignoreConfig = optionsOrExtensions?.ignoreConfig;
   }
+
+  // Load ignore config if not explicitly provided
+  if (!ignoreConfig) {
+    ignoreConfig = loadIgnoreConfig(codebasePath);
+  }
+
+  // Build custom skip sets from ignore config
+  // directories: resolve to absolute paths for comparison (relative from codebase root)
+  const customSkipDirs = new Set(ignoreConfig.directories.map(d => path.resolve(codebasePath, d)));
+  const customSkipFiles = new Set(ignoreConfig.files.map(f => path.resolve(codebasePath, f)));
+  const customSkipPatterns = ignoreConfig.patterns.map(p => globToRegex(p));
 
   const files: string[] = [];
   const skippedFiles: { path: string; size: number }[] = [];
@@ -161,17 +266,25 @@ export function discoverFiles(
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        if (!SKIP_DIRS.has(entry.name)) {
-          walk(path.join(dir, entry.name));
+        const dirFullPath = path.join(dir, entry.name);
+        if (!SKIP_DIRS.has(entry.name) && !customSkipDirs.has(dirFullPath)) {
+          walk(dirFullPath);
         }
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name);
         if (exts.has(ext)) {
-          // Skip files matching skip patterns
+          // Skip files matching built-in skip patterns
           const shouldSkip = SKIP_FILE_PATTERNS.some(pattern => pattern.test(entry.name));
           if (shouldSkip) continue;
 
           const filePath = path.join(dir, entry.name);
+
+          // Skip files matching custom ignore config
+          if (customSkipFiles.has(filePath)) continue;
+
+          const relativePath = path.relative(codebasePath, filePath);
+          if (customSkipPatterns.some(regex => regex.test(relativePath) || regex.test(entry.name))) continue;
+
           try {
             const stat = fs.statSync(filePath);
             if (stat.size <= maxFileSize) {
@@ -346,6 +459,9 @@ export class SourceRetriever {
       this.log('STREAMING INDEX (memory-efficient)');
       this.log('='.repeat(80));
     }
+
+    // Ensure .codebaxing/ignore.json exists
+    ensureIgnoreConfig(this.codebasePath);
 
     const startTime = performance.now();
     const filesPerBatch = getFilesPerBatch();

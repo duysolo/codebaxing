@@ -27,6 +27,7 @@ export { TreeSitterParser } from './parsers/treesitter-parser.js';
 export { getLanguageForFile, getSupportedExtensions, EXTENSION_MAP } from './parsers/language-configs.js';
 
 // Indexing
-export { SourceRetriever, discoverFiles } from './indexing/source-retriever.js';
+export { SourceRetriever, discoverFiles, loadIgnoreConfig, ensureIgnoreConfig } from './indexing/source-retriever.js';
+export type { IgnoreConfig } from './indexing/source-retriever.js';
 export { MemoryRetriever } from './indexing/memory-retriever.js';
 export { EmbeddingService, getEmbeddingService } from './indexing/embedding-service.js';
