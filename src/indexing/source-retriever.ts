@@ -86,6 +86,27 @@ function getMaxChunks(): number {
   return 100000; // Default 100k chunks
 }
 
+// Batch sizes for memory-efficient streaming (configurable via env vars)
+// FILES_PER_BATCH: How many files to parse before embedding+storing
+// EMBED_BATCH_SIZE: How many texts to embed at once (lower = less RAM)
+function getFilesPerBatch(): number {
+  const envVal = process.env.CODEBAXING_FILES_PER_BATCH;
+  if (envVal) {
+    const val = parseInt(envVal, 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return 50; // Default 50 files per batch
+}
+
+function getEmbedBatchSize(): number {
+  const envVal = process.env.CODEBAXING_EMBED_BATCH_SIZE;
+  if (envVal) {
+    const val = parseInt(envVal, 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return 32; // Default 32 texts per embed batch
+}
+
 // ─── File Discovery ──────────────────────────────────────────────────────────
 
 export interface DiscoverFilesOptions {
@@ -311,24 +332,22 @@ export class SourceRetriever {
 
     if (!options.progressCallback) {
       this.log('\n' + '='.repeat(80));
-      this.log('INDEXING CODEBASE');
+      this.log('STREAMING INDEX (memory-efficient)');
       this.log('='.repeat(80));
     }
 
     const startTime = performance.now();
+    const filesPerBatch = getFilesPerBatch();
+    const embedBatchSize = getEmbedBatchSize();
+
+    if (this.verbose) {
+      this.log(`  File batch: ${filesPerBatch}  |  Embed batch: ${embedBatchSize}`);
+    }
 
     // Step 1: Find all files
     const extensionsSet = new Set(fileExtensions);
     const allFiles = discoverFiles(this.codebasePath, extensionsSet, this.verbose);
     this.stats.totalFiles = allFiles.length;
-
-    // Warn for large codebases
-    if (this.verbose && allFiles.length > 1000) {
-      const estimatedMinutes = Math.ceil(allFiles.length / 500); // ~500 files/min estimate
-      console.log(`\n⚠️  Large codebase detected (${allFiles.length.toLocaleString()} files)`);
-      console.log(`   Estimated time: ${estimatedMinutes}-${estimatedMinutes * 2} minutes`);
-      console.log(`   Tip: Use incremental indexing for faster updates after first index\n`);
-    }
 
     // Store file modification times
     const fileMtimes: Record<string, number> = {};
@@ -340,76 +359,17 @@ export class SourceRetriever {
     this.metadata.fileMtimes = fileMtimes;
 
     emit('files_found', { files: allFiles, codebasePath: this.codebasePath });
-    if (!options.progressCallback) this.log(`Found ${allFiles.length} files`);
+    if (!options.progressCallback) this.log(`Found ${allFiles.length.toLocaleString()} files`);
 
-    // Step 2: Parse all files with progress
-    emit('parsing_start', { total: allFiles.length });
-
-    // Create a progress callback for CLI if verbose
-    const parseStartTime = performance.now();
-    const parseProgressCallback = options.progressCallback ?? (
-      this.verbose ? (eventType: string, data: Record<string, unknown>) => {
-        if (eventType === 'file_parsed') {
-          const index = data.index as number;
-          const total = data.total as number;
-          const filePath = data.path as string;
-          const relativePath = path.relative(this.codebasePath, filePath);
-          const pct = ((index / total) * 100).toFixed(1);
-          const elapsed = (performance.now() - parseStartTime) / 1000;
-          const rate = index / elapsed || 1;
-          const remaining = (total - index) / rate;
-          const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
-          process.stdout.write(`\rParsing: ${index.toLocaleString()}/${total.toLocaleString()} (${pct}%) ETA: ${eta} - ${relativePath.slice(0, 40).padEnd(40)}`);
-        }
-      } : undefined
-    );
-
-    const { symbols: allSymbols, errorCount } = parallelParseFiles(allFiles, {
-      progressCallback: parseProgressCallback,
-    });
-    this.stats.parseErrors = errorCount;
-    this.stats.totalSymbols = allSymbols.length;
-
-    if (!options.progressCallback) {
-      process.stdout.write('\r' + ' '.repeat(120) + '\r'); // Clear progress line
-      this.log(`Parsed ${allSymbols.length.toLocaleString()} symbols from ${allFiles.length} files`);
+    // Warn for large codebases
+    if (this.verbose && allFiles.length > 1000) {
+      const estimatedMinutes = Math.ceil(allFiles.length / 300);
+      console.log(`\n⚠️  Large codebase (${allFiles.length.toLocaleString()} files)`);
+      console.log(`   Estimated time: ${estimatedMinutes}-${estimatedMinutes * 2} minutes`);
+      console.log(`   Tip: Set CODEBAXING_FILES_PER_BATCH=30 for less RAM usage\n`);
     }
 
-    // Step 3: Filter trivial symbols and create chunks
-    const minCodeLength = 30; // Minimum code length to be worth indexing
-    const filteredSymbols = allSymbols.filter(s => {
-      // Skip symbols with very short code
-      if (!s.codeSnippet || s.codeSnippet.length < minCodeLength) return false;
-      // Skip single-line variables (usually just imports or simple assignments)
-      if (s.type === 'variable' && s.lineEnd - s.lineStart < 2) return false;
-      return true;
-    });
-
-    if (this.verbose && filteredSymbols.length < allSymbols.length) {
-      const skipped = allSymbols.length - filteredSymbols.length;
-      console.log(`Filtered ${skipped.toLocaleString()} trivial symbols (${filteredSymbols.length.toLocaleString()} remaining)`);
-    }
-
-    let chunksToIndex = filteredSymbols.map(s => this.createChunk(s));
-
-    // Apply max chunks limit with smart sampling
-    const maxChunks = getMaxChunks();
-    if (chunksToIndex.length > maxChunks) {
-      if (this.verbose) {
-        console.log(`\n⚠️  Chunk limit reached (${chunksToIndex.length.toLocaleString()} > ${maxChunks.toLocaleString()})`);
-        console.log(`   Sampling ${maxChunks.toLocaleString()} most important chunks...`);
-        console.log(`   Tip: Set CODEBAXING_MAX_CHUNKS=200000 to increase limit\n`);
-      }
-      // Sort by code length (longer = more important) and take top N
-      chunksToIndex.sort((a, b) => b.text.length - a.text.length);
-      chunksToIndex = chunksToIndex.slice(0, maxChunks);
-    }
-
-    const chunks = chunksToIndex;
-    this.stats.totalChunks = chunks.length;
-    emit('chunks_created', { total: chunks.length });
-
-    // Step 4: Create ChromaDB collection
+    // Step 2: Create ChromaDB collection FIRST (before loading data)
     try {
       await this.chromaClient.deleteCollection({ name: this.collectionName });
     } catch { /* collection doesn't exist */ }
@@ -419,57 +379,121 @@ export class SourceRetriever {
       metadata: { description: `Code embeddings for ${path.basename(this.codebasePath)}` },
     });
 
-    // Step 5: Generate embeddings and store
-    emit('embedding_start', { total: chunks.length, etaMinutes: chunks.length / 50 / 60 });
-    if (!options.progressCallback) {
-      this.log(`\nGenerating embeddings for ${chunks.length} chunks...`);
-    }
+    // Step 3: Process files in streaming batches
+    // Parse → Filter → Embed → Store → Free memory → Repeat
+    const numBatches = Math.ceil(allFiles.length / filesPerBatch);
+    const maxChunks = getMaxChunks();
+    const minCodeLength = 30;
+    const seenIds = new Map<string, number>();
 
-    // Use larger batch size for better performance
-    const batchSize = 200;
-    const embeddingStartTime = performance.now();
+    let totalSymbols = 0;
+    let totalChunks = 0;
+    let parseErrors = 0;
+    const batchStartTime = performance.now();
 
-    for (let i = 0; i < chunks.length; i += batchSize) {
-      const batch = chunks.slice(i, i + batchSize);
-      const currentProgress = Math.min(i + batchSize, chunks.length);
+    for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
+      const batchStart = batchIdx * filesPerBatch;
+      const batchEnd = Math.min(batchStart + filesPerBatch, allFiles.length);
+      const batchFiles = allFiles.slice(batchStart, batchEnd);
 
-      emit('embedding_progress', {
-        current: currentProgress,
-        total: chunks.length,
-      });
-
-      // Show progress in CLI
-      if (!options.progressCallback && this.verbose) {
-        const pct = ((currentProgress / chunks.length) * 100).toFixed(1);
-        const elapsed = (performance.now() - embeddingStartTime) / 1000;
-        const rate = currentProgress / elapsed || 1;
-        const remaining = (chunks.length - currentProgress) / rate;
+      if (this.verbose) {
+        const elapsed = (performance.now() - batchStartTime) / 1000;
+        const rate = batchStart / elapsed || 1;
+        const remaining = (allFiles.length - batchStart) / rate;
         const eta = remaining > 60 ? `${(remaining / 60).toFixed(1)}m` : `${remaining.toFixed(0)}s`;
-        const rateStr = rate > 0 ? `${rate.toFixed(0)}/s` : '';
-        process.stdout.write(`\rEmbedding: ${currentProgress.toLocaleString()}/${chunks.length.toLocaleString()} (${pct}%) - ETA: ${eta} ${rateStr}    `);
+        process.stdout.write(`\rBatch ${batchIdx + 1}/${numBatches} (files ${batchStart + 1}-${batchEnd}/${allFiles.length}) ETA: ${eta}      `);
       }
 
-      try {
-        const texts = batch.map(c => c.text);
-        const embeddings = await this.embeddingService.embedBatch(texts);
+      // 3a. Parse this batch
+      const batchChunks: CodeChunk[] = [];
+      for (const filepath of batchFiles) {
+        try {
+          const parsed = this.parser.parseFile(filepath);
+          for (const symbol of parsed.symbols) {
+            totalSymbols++;
+            // Filter trivial symbols
+            if (!symbol.codeSnippet || symbol.codeSnippet.length < minCodeLength) continue;
+            if (symbol.type === 'variable' && symbol.lineEnd - symbol.lineStart < 2) continue;
 
-        await this.collection.add({
-          ids: batch.map(c => c.id),
-          embeddings,
-          documents: texts,
-          metadatas: batch.map(c => c.metadata),
-        });
-      } catch (e) {
-        if (!options.progressCallback) {
-          this.log(`Error embedding batch ${i}: ${(e as Error).message}`);
+            const chunk = this.createChunk(symbol);
+            // Deduplicate IDs
+            const existingCount = seenIds.get(chunk.id);
+            if (existingCount !== undefined) {
+              seenIds.set(chunk.id, existingCount + 1);
+              chunk.id = `${chunk.id}#${existingCount + 1}`;
+            } else {
+              seenIds.set(chunk.id, 0);
+            }
+            batchChunks.push(chunk);
+          }
+        } catch {
+          parseErrors++;
         }
       }
+
+      if (batchChunks.length === 0) continue;
+
+      // Check max chunks limit
+      if (totalChunks + batchChunks.length > maxChunks) {
+        const remaining = maxChunks - totalChunks;
+        if (remaining <= 0) {
+          if (this.verbose) {
+            console.log(`\n⚠️  Max chunks limit reached (${maxChunks.toLocaleString()}). Stopping indexing.`);
+          }
+          break;
+        }
+        // Take only what we can fit, prioritizing longer code
+        batchChunks.sort((a, b) => b.text.length - a.text.length);
+        batchChunks.length = remaining;
+      }
+
+      // 3b. Embed in sub-batches for memory efficiency
+      const allEmbeddings: number[][] = [];
+      for (let i = 0; i < batchChunks.length; i += embedBatchSize) {
+        const subBatch = batchChunks.slice(i, i + embedBatchSize);
+        const texts = subBatch.map(c => c.text);
+        try {
+          const embeddings = await this.embeddingService.embedBatch(texts);
+          allEmbeddings.push(...embeddings);
+        } catch (e) {
+          // Push zero vectors as fallback
+          for (let j = 0; j < subBatch.length; j++) {
+            allEmbeddings.push(new Array(384).fill(0));
+          }
+        }
+      }
+
+      // 3c. Store in ChromaDB (batch limit ~5000)
+      const chromaBatchSize = 5000;
+      for (let i = 0; i < batchChunks.length; i += chromaBatchSize) {
+        const end = Math.min(i + chromaBatchSize, batchChunks.length);
+        const subChunks = batchChunks.slice(i, end);
+        const subEmbeddings = allEmbeddings.slice(i, end);
+
+        await this.collection.add({
+          ids: subChunks.map(c => c.id),
+          embeddings: subEmbeddings,
+          documents: subChunks.map(c => c.text),
+          metadatas: subChunks.map(c => c.metadata),
+        });
+      }
+
+      totalChunks += batchChunks.length;
+
+      // 3d. Clear references to help GC
+      batchChunks.length = 0;
+      allEmbeddings.length = 0;
+
+      emit('embedding_progress', { current: totalChunks, total: allFiles.length * 5 }); // rough estimate
     }
 
-    if (!options.progressCallback && this.verbose) {
-      process.stdout.write('\r' + ' '.repeat(80) + '\r'); // Clear progress line
+    if (this.verbose) {
+      process.stdout.write('\r' + ' '.repeat(100) + '\r');
     }
 
+    this.stats.totalSymbols = totalSymbols;
+    this.stats.totalChunks = totalChunks;
+    this.stats.parseErrors = parseErrors;
     this.stats.indexingTime = (performance.now() - startTime) / 1000;
     emit('complete', { stats: { ...this.stats } });
 
