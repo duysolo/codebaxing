@@ -13,6 +13,7 @@ import type { MemoryRetriever } from '../indexing/memory-retriever.js';
 const CODEBAXING_DIR = '.codebaxing';
 const CHROMA_DIR = 'chroma';
 const METADATA_FILE = 'metadata.json';
+const CONFIG_FILE = 'config.json';
 
 // ─── MCPSessionState ─────────────────────────────────────────────────────────
 
@@ -51,6 +52,7 @@ export interface CodebaxingPaths {
   codebaxingDir: string;
   chromaPath: string;
   metadataPath: string;
+  configPath: string;
 }
 
 export function getCodebaxingPaths(codebasePath: string): CodebaxingPaths {
@@ -59,7 +61,31 @@ export function getCodebaxingPaths(codebasePath: string): CodebaxingPaths {
     codebaxingDir,
     chromaPath: path.join(codebaxingDir, CHROMA_DIR),
     metadataPath: path.join(codebaxingDir, METADATA_FILE),
+    configPath: path.join(codebaxingDir, CONFIG_FILE),
   };
+}
+
+export interface CodebaxingConfig {
+  basePath: string;
+}
+
+/**
+ * Load config from `.codebaxing/config.json`.
+ * Returns undefined if file doesn't exist or is invalid.
+ */
+export function loadConfig(configPath: string): CodebaxingConfig | undefined {
+  try {
+    return JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Save config to `.codebaxing/config.json`.
+ */
+export function saveConfig(configPath: string, config: CodebaxingConfig): void {
+  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 export function hasValidIndex(paths: CodebaxingPaths): boolean {
@@ -190,6 +216,7 @@ function backgroundFullIndex(
   setImmediate(async () => {
     try {
       fs.mkdirSync(paths.codebaxingDir, { recursive: true });
+      saveConfig(paths.configPath, { basePath: codebasePath });
 
       const retriever = new SourceRetriever({
         codebasePath,

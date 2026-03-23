@@ -168,6 +168,7 @@ function getCodebaxingPaths(codebasePath: string) {
     codebaxingDir,
     chromaPath: path.join(codebaxingDir, 'chromadb'),
     metadataPath: path.join(codebaxingDir, 'metadata.json'),
+    configPath: path.join(codebaxingDir, 'config.json'),
   };
 }
 
@@ -198,6 +199,9 @@ async function runIndex(codebasePath: string): Promise<void> {
   try {
     // Ensure .codebaxing directory exists
     fs.mkdirSync(paths.codebaxingDir, { recursive: true });
+
+    // Save config with basePath
+    fs.writeFileSync(paths.configPath, JSON.stringify({ basePath: absolutePath }, null, 2) + '\n');
 
     const retriever = new SourceRetriever({
       codebasePath: absolutePath,

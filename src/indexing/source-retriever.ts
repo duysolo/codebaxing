@@ -396,9 +396,14 @@ export class SourceRetriever {
     if (this.verbose) console.log(message);
   }
 
+  private toRelativePath(filepath: string): string {
+    return path.relative(this.codebasePath, filepath);
+  }
+
   private createChunkText(symbol: Symbol): string {
+    const relPath = this.toRelativePath(symbol.filepath);
     const parts: string[] = [
-      `# ${symbol.filepath}:${symbol.lineStart}`,
+      `# ${relPath}:${symbol.lineStart}`,
       `${symbol.type}: ${symbol.name}`,
       '',
     ];
@@ -425,18 +430,19 @@ export class SourceRetriever {
   }
 
   private createChunk(symbol: Symbol): CodeChunk {
-    const chunkId = `${symbol.filepath}:${symbol.name}:${symbol.lineStart}`;
+    const relPath = this.toRelativePath(symbol.filepath);
+    const chunkId = `${relPath}:${symbol.name}:${symbol.lineStart}`;
     const language = getLanguageForFile(symbol.filepath) ?? 'unknown';
 
     return {
       id: chunkId,
       text: this.createChunkText(symbol),
-      filepath: symbol.filepath,
+      filepath: relPath,
       symbolName: symbol.name,
       symbolType: symbol.type,
       lineStart: symbol.lineStart,
       metadata: {
-        filepath: symbol.filepath,
+        filepath: relPath,
         name: symbol.name,
         type: symbol.type,
         line: String(symbol.lineStart),
@@ -476,11 +482,12 @@ export class SourceRetriever {
     const allFiles = discoverFiles(this.codebasePath, extensionsSet, this.verbose);
     this.stats.totalFiles = allFiles.length;
 
-    // Store file modification times
+    // Store file modification times (relative paths as keys)
     const fileMtimes: Record<string, number> = {};
     for (const filepath of allFiles) {
       try {
-        fileMtimes[filepath] = fs.statSync(filepath).mtimeMs;
+        const relPath = path.relative(this.codebasePath, filepath);
+        fileMtimes[relPath] = fs.statSync(filepath).mtimeMs;
       } catch { /* skip */ }
     }
     this.metadata.fileMtimes = fileMtimes;
@@ -742,10 +749,7 @@ export class SourceRetriever {
 
     for (let i = 0; i < documents.length; i++) {
       const metadata = metadatas[i] as Record<string, string>;
-      let filepath = metadata.filepath;
-      try {
-        filepath = path.relative(this.codebasePath, filepath);
-      } catch { /* keep absolute */ }
+      const filepath = metadata.filepath;
       sources.push(`${filepath}:${metadata.line} - ${metadata.name}()`);
 
       docResults.push({
@@ -813,20 +817,23 @@ export class SourceRetriever {
     const emit = options.progressCallback ?? (() => {});
     const extensions = options.fileExtensions ?? SUPPORTED_EXTENSIONS;
 
-    // Get stored file mtimes
+    // Get stored file mtimes (keys are relative paths)
     const storedMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
 
-    // Scan current files
+    // Scan current files (use relative paths as keys)
     const extensionsSet = new Set(extensions);
-    const allCurrentPaths = discoverFiles(this.codebasePath, extensionsSet);
+    const allCurrentAbsPaths = discoverFiles(this.codebasePath, extensionsSet);
     const currentFiles: Record<string, number> = {};
-    for (const filepath of allCurrentPaths) {
+    const relToAbs: Record<string, string> = {};
+    for (const absPath of allCurrentAbsPaths) {
       try {
-        currentFiles[filepath] = fs.statSync(filepath).mtimeMs;
+        const relPath = path.relative(this.codebasePath, absPath);
+        currentFiles[relPath] = fs.statSync(absPath).mtimeMs;
+        relToAbs[relPath] = absPath;
       } catch { /* skip */ }
     }
 
-    // Categorize changes
+    // Categorize changes (all using relative paths)
     const storedPaths = new Set(Object.keys(storedMtimes));
     const currentPaths = new Set(Object.keys(currentFiles));
 
@@ -847,11 +854,11 @@ export class SourceRetriever {
     let chunksRemoved = 0;
     let chunksAdded = 0;
 
-    // Remove stale chunks
+    // Remove stale chunks (filepath in ChromaDB is relative)
     if (filesToRemove.size > 0 && this.collection) {
-      for (const filepath of filesToRemove) {
+      for (const relPath of filesToRemove) {
         try {
-          await this.collection.delete({ where: { filepath } });
+          await this.collection.delete({ where: { filepath: relPath } });
           chunksRemoved++;
         } catch { /* ignore */ }
       }
@@ -862,9 +869,11 @@ export class SourceRetriever {
       emit('parsing_start', { total: filesToReindex.size });
 
       const chunks: CodeChunk[] = [];
-      for (const filepath of filesToReindex) {
+      for (const relPath of filesToReindex) {
+        const absPath = relToAbs[relPath];
+        if (!absPath) continue;
         try {
-          const parsed = this.parser.parseFile(filepath);
+          const parsed = this.parser.parseFile(absPath);
           for (const symbol of parsed.symbols) {
             chunks.push(this.createChunk(symbol));
           }

@@ -28,6 +28,7 @@ import {
   hasValidIndex,
   ensureLoaded,
   isIndexing,
+  saveConfig,
 } from './state.js';
 
 // ─── Initialize MCP Server ──────────────────────────────────────────────────
@@ -467,6 +468,9 @@ async function fullIndex(
   embeddingModel: string
 ): Promise<Record<string, unknown>> {
   fs.mkdirSync(paths.codebaxingDir, { recursive: true });
+
+  // Save config with basePath so index knows the codebase root
+  saveConfig(paths.configPath, { basePath: codebasePath });
 
   const retriever = new SourceRetriever({
     codebasePath,
