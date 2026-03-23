@@ -492,6 +492,12 @@ export class SourceRetriever {
       this.log('='.repeat(80));
     }
 
+    // Initialize tree-sitter grammars (required before parsing)
+    const { loaded, failed } = await this.parser.initLanguages();
+    if (this.verbose && failed.length > 0) {
+      console.log(`Grammar init: ${loaded.length} loaded, ${failed.length} failed (${failed.join(', ')})`);
+    }
+
     // Ensure .codebaxing/ignore.json exists
     ensureIgnoreConfig(this.codebasePath);
 
@@ -909,6 +915,9 @@ export class SourceRetriever {
     const startTime = performance.now();
     const emit = options.progressCallback ?? (() => {});
     const extensions = options.fileExtensions ?? SUPPORTED_EXTENSIONS;
+
+    // Initialize tree-sitter grammars (required before parsing)
+    await this.parser.initLanguages();
 
     // Get stored file mtimes (keys are relative paths)
     const storedMtimes = (this.metadata.fileMtimes as Record<string, number>) ?? {};
