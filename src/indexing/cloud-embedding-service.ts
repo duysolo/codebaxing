@@ -46,7 +46,7 @@ const PROVIDER_DEFAULTS: Record<CloudProvider, ProviderDefaults> = {
     model: 'text-embedding-004',
     dimensions: 768,
     batchSize: 100, // Gemini batch limit: 100 texts per request
-    baseUrl: 'https://generativelanguage.googleapis.com/v1',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
   },
 };
 
