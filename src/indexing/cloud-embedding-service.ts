@@ -43,8 +43,8 @@ const PROVIDER_DEFAULTS: Record<CloudProvider, ProviderDefaults> = {
     baseUrl: 'https://api.voyageai.com/v1/embeddings',
   },
   gemini: {
-    model: 'text-embedding-004',
-    dimensions: 768,
+    model: 'gemini-embedding-001',
+    dimensions: 3072,
     batchSize: 100, // Gemini batch limit: 100 texts per request
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
   },

@@ -657,7 +657,7 @@ export class SourceRetriever {
           embedFn(subTexts).catch(e => {
             const msg = (e as Error).message ?? '';
             if (msg.includes('Failed to load embedding model')) throw e;
-            return subTexts.map(() => new Array(384).fill(0));
+            return subTexts.map(() => new Array(this.embeddingService.dimensions).fill(0));
           })
         );
       }
@@ -1061,7 +1061,7 @@ export class SourceRetriever {
           const subBatchPromises: Promise<number[][]>[] = [];
           for (let j = 0; j < texts.length; j += embedBatchSize) {
             const subTexts = texts.slice(j, j + embedBatchSize);
-            subBatchPromises.push(embedFn(subTexts).catch(() => subTexts.map(() => new Array(384).fill(0))));
+            subBatchPromises.push(embedFn(subTexts).catch(() => subTexts.map(() => new Array(this.embeddingService.dimensions).fill(0))));
           }
           const subResults = await Promise.all(subBatchPromises);
           const embeddings = subResults.flat();
